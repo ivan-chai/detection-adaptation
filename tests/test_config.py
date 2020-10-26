@@ -7,7 +7,7 @@ from unittest import TestCase, main
 from dalib.config import *
 
 
-class TestModel(object):
+class SimpleModel(object):
     @staticmethod
     def get_default_config(model=None, model_config=None):
         return OrderedDict([
@@ -23,11 +23,11 @@ class TestConfig(TestCase):
     def test_parser(self):
         config_orig = {
             "model": "some-model",
-            "model_config": {"_type": "TestModel", "arg1": 5, "arg2": None}
+            "model_config": {"_type": "SimpleModel", "arg1": 5, "arg2": None}
         }
         config_gt = {
             "model": "some-model",
-            "model_config": {"_type": "TestModel", "arg1": 5, "arg2": None}
+            "model_config": {"_type": "SimpleModel", "arg1": 5, "arg2": None}
         }
         with tempfile.TemporaryDirectory() as root:
             path = os.path.join(root, "config.yaml")
@@ -38,9 +38,9 @@ class TestConfig(TestCase):
     def test_types(self):
         config = {
             "model": "some-model",
-            "model_config": {"_type": "TestModel", "arg1": 5, "arg2": None}
+            "model_config": {"_type": "SimpleModel", "arg1": 5, "arg2": None}
         }
-        model = TestModel(config)
+        model = SimpleModel(config)
         self.assertEqual(model.config["model"], config["model"])
         self.assertEqual(model.config["model_config"]["arg1"], config["model_config"]["arg1"])
         self.assertEqual(model.config["model_config"]["arg2"], config["model_config"]["arg2"])
