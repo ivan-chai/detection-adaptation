@@ -1,4 +1,41 @@
-import re
+r"""Tools for configuration using default config.
+
+All configurable classes must have :meth:`get_default_config` static method
+which returns dictionary of default values. Than you can use
+:func:`prepare_config` function to construct actual config. Actual config
+can be ``None``, ``dict`` or ``str`` containing path to the file.
+
+**Example**::
+
+    from dalib.config import prepare_config
+
+    class Configurable():
+        @staticmethod
+        def get_default_config():
+            return OrderedDict([
+                ("arg1", 10),
+                ("arg2", None)
+            ])
+
+        def __init__(self, *args, config=None):
+            config = prepare_config(self, config)
+            self.arg1 = config["arg1"]
+            self.arg2 = config["arg2"]
+
+    obj = Configurable(config={"arg1": 5})
+    print(obj.arg1)  # 5
+    print(obj.arg2)  # None
+
+Config files use YAML syntax. The special key `_type` can be used in configs to specify
+target class. If types are provided, they are checked during initialization.
+
+**Example**::
+
+    system:
+        subsystem:
+            _type: SubsystemClass
+            arg1: [5.0, 2.0]
+"""
 from collections import OrderedDict
 
 import yaml
