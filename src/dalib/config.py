@@ -4,7 +4,7 @@ from collections import OrderedDict
 import yaml
 
 
-CONFIG_CLASS = "__class__"
+CONFIG_TYPE = "_type"
 
 
 class ConfigError(Exception):
@@ -12,31 +12,9 @@ class ConfigError(Exception):
     pass
 
 
-def _parse_types(config):
-    """Parse types from config keys."""
-    typed_param = re.compile(r"^([^<> \t]*)[ \t]*<([^<>]*)>$")
-    if isinstance(config, dict):
-        result = OrderedDict()
-        for k, v in config.items():
-            cls = None
-            match = typed_param.match(k)
-            if match:
-                k = match.group(1)
-                cls = match.group(2)
-            v = _parse_types(v)
-            if cls is not None:
-                if not isinstance(v, dict):
-                    raise ConfigError("Class config must be dict, got: {}".format(type(v)))
-                v[CONFIG_CLASS] = cls
-            result[k] = v
-        return result
-    return config
-
-
 def read_config(filename):
     with open(filename) as fp:
-        config = yaml.safe_load(fp)
-    return _parse_types(config)
+        return yaml.safe_load(fp)
 
 
 def write_config(config, filename):
@@ -69,14 +47,13 @@ def prepare_config(cls_or_default, config=None):
         return default_config
     elif not isinstance(config, dict):
         raise ConfigError("Config dictionary expected, got {}".format(type(config)))
-    config = _parse_types(config)
 
     # Check type.
-    if CONFIG_CLASS in config:
-        if (cls_name is not None) and (cls_name != config[CONFIG_CLASS]):
+    if CONFIG_TYPE in config:
+        if (cls_name is not None) and (cls_name != config[CONFIG_TYPE]):
             raise ConfigError("Type mismatch: expected {}, got {}".format(
-                config[CONFIG_CLASS], cls_name))
-        del config[CONFIG_CLASS]
+                config[CONFIG_TYPE], cls_name))
+        del config[CONFIG_TYPE]
 
     # Merge configs.
     for key in config:
