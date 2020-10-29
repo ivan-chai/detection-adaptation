@@ -1,0 +1,21 @@
+checkpoint_callback:
+  mode: max
+  monitor: val_acc
+  verbose: true
+datamodule:
+  _type: SVHNToMNISTDataModule
+  batch_size: 128
+  domain_adaptation: &domain_adaptation false
+  num_workers: 8
+  train_domains:
+  - svhn
+model:
+  _type: SVHNToMNISTModel
+  adaptation_factor: 0.1
+  domain_adaptation: *domain_adaptation
+  lr: 0.001
+  use_only_y_labels_from_source_domain: true
+seed: 42
+trainer:
+  deterministic: True
+  max_epochs: 5
