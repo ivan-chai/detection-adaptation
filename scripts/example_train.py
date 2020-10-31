@@ -11,8 +11,12 @@ from datasets.widerface import LightningDataModule, Evaluator
 def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument("--resnet", type=int, default=18, help="resnet depth (18, 34, 50, 101)")
-    parser.add_argument("--epochs", type=int, default=1, help="epochs for training")
-    parser.add_argument("--max-lr", type=float, default=3e-2, help="max lr for 1-cycle schedule")
+    parser.add_argument("--steps", type=int, default=3000, help="numbers of training steps")
+    parser.add_argument("--start-lr", type=float, default=1e-5, help="start lr for 1-cycle schedule")
+    parser.add_argument("--max-lr", type=float, default=3e-3, help="max lr for 1-cycle schedule")
+    parser.add_argument("--end-lr", type=float, default=1e-6, help="end lr for 1-cycle schedule")
+    parser.add_argument("--pct-start", type=float, default=0.3, help="part of the cycle where lr increases")
+    parser.add_argument("--anneal", type=str, default="linear", help="annealing strategy (cos, linear)")
     parser.add_argument("--dir", type=str, default="WIDERFACE", help="path to dataset dir")
     parser.add_argument("--batch-size", type=int, default=32, help="batch size")
     parser.add_argument("--gpus", type=int, default=1, help="number of gpus")
@@ -20,6 +24,7 @@ def parse_args():
     args = parser.parse_args()
     assert args.resnet in [18, 34, 50, 101]
     assert args.precision in [16, 32]
+    assert args.anneal in ['cos','linear']
 
     return args
 
@@ -29,10 +34,12 @@ if __name__=="__main__":
     pl_data = LightningDataModule({"root": args.dir, "batch_size": args.batch_size, "collate_config": {"grid_h": 2, "grid_w": 2}})
 
     pl_model.scheduler = lambda opt: torch.optim.lr_scheduler.OneCycleLR(
-                opt, max_lr=args.max_lr, base_momentum=0, max_momentum=0, steps_per_epoch=12880//args.batch_size, epochs=args.epochs,
+                opt, max_lr=args.max_lr, div_factor=max(1e-10, args.max_lr/args.start_lr), final_div_factor=max(1e-10, args.max_lr/args.end_lr),
+                pct_start=args.pct_start,
+                base_momentum=.95, max_momentum=.85, total_steps = args.steps + 1,
             )
 
-    trainer = pl.Trainer(gpus=1, val_check_interval=.1, max_epochs=args.epochs, precision=args.precision)
+    trainer = pl.Trainer(gpus=1, val_check_interval=.1, max_steps=args.steps, precision=args.precision)
 
     trainer.fit(pl_model, datamodule=pl_data)
 
