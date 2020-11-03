@@ -1,2 +1,2 @@
 from .gradient_reversal_layer import GradientReversalLayer
-from .svhn_to_mnist import SVHNToMNISTDataModule, SVHNToMNISTModel
+from .svhn_to_mnist import SVHNToMNISTModel
