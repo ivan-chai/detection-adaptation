@@ -18,5 +18,4 @@ model:
   use_only_y_labels_from_source_domain: true
 seed: 42
 trainer:
-  deterministic: True
   max_epochs: 5

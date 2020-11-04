@@ -1,7 +1,1 @@
-numpy
-torch
-torchvision
-Pillow
-pytorch-lightning==1.0.3
-PyYAML
-scipy
+-e .

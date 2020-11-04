@@ -6,7 +6,7 @@ import pytorch_lightning as pl
 from pytorch_lightning.callbacks.model_checkpoint import ModelCheckpoint
 from pytorch_lightning.loggers import TensorBoardLogger
 
-from dalib.config import read_config
+from dalib.config import prepare_config, read_config
 from dalib import datasets, models
 
 
@@ -18,8 +18,33 @@ def get_datamodule_class(config):
     return getattr(datasets, config["datamodule"]["_type"])
 
 
+def get_default_config():
+    default_config = {
+        "checkpoint_callback": {},
+        "datamodule": {
+            "_type": "SVHNToMNISTDataModule"
+        },
+        "model": {
+            "_type": "SVHNToMNISTModel"
+        },
+        "seed": 0,
+        "trainer": {}
+    }
+    default_config["datamodule"].update(
+        get_datamodule_class(default_config).get_default_config()
+    )
+    default_config["model"].update(
+        get_model_class(default_config).get_default_config()
+    )
+    return default_config
+
+
 def main(args):
     config = read_config(args.config_path)
+    config = prepare_config(get_default_config(), config)
+    if config["datamodule"]["domain_adaptation"] != config["model"]["domain_adaptation"]:
+        raise ValueError("domain_adaptation parameter of datamodule and model must be the same")
+
     pl.seed_everything(config["seed"])
     dm = get_datamodule_class(config)(
         args.data_dir,
@@ -34,6 +59,7 @@ def main(args):
         logger=tb_logger,
         gpus=args.gpus,
         checkpoint_callback=checkpoint_callback,
+        deterministic=True,
         **config["trainer"]
     )
     trainer.logger.log_hyperparams(config)
@@ -66,7 +92,7 @@ def get_args():
     )
     parser.add_argument(
         "-g", "--gpus",
-        nargs='+', type=int, default=None,
+        nargs="+", type=int, default=None,
         help="Which GPUs to use."
     )
     return parser.parse_args()
