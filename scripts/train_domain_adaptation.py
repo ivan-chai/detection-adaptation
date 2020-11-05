@@ -66,17 +66,17 @@ def get_args():
         description="Train domain adaptation model."
     )
     parser.add_argument(
-        "-d", "--data_dir",
+        "-d", "--data-dir",
         type=str, required=True,
         help="Root directory where to download the data."
     )
     parser.add_argument(
-        "-c", "--config_path",
+        "-c", "--config-path",
         type=str, required=True,
         help="Path to config."
     )
     parser.add_argument(
-        "-l", "--log_dir",
+        "-l", "--log-dir",
         type=str, default=os.path.join(os.getcwd(), "lightning_logs"),
         help="Directory where to save logs. If not specified then ./lightning_logs is used."
     )
