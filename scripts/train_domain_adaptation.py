@@ -30,21 +30,12 @@ def get_default_config():
         "seed": 0,
         "trainer": {}
     }
-    default_config["datamodule"].update(
-        get_datamodule_class(default_config).get_default_config()
-    )
-    default_config["model"].update(
-        get_model_class(default_config).get_default_config()
-    )
     return default_config
 
 
 def main(args):
     config = read_config(args.config_path)
     config = prepare_config(get_default_config(), config)
-    if config["datamodule"]["domain_adaptation"] != config["model"]["domain_adaptation"]:
-        raise ValueError("domain_adaptation parameter of datamodule and model must be the same")
-
     pl.seed_everything(config["seed"])
     dm = get_datamodule_class(config)(
         args.data_dir,
@@ -53,6 +44,10 @@ def main(args):
     model = get_model_class(config)(
         config["model"]
     )
+
+    if dm.config["domain_adaptation"] != model.config["domain_adaptation"]:
+        raise ValueError("domain_adaptation parameter of datamodule and model must be the same")
+
     tb_logger = TensorBoardLogger(args.log_dir, name=args.name)
     checkpoint_callback = ModelCheckpoint(**config["checkpoint_callback"])
     trainer = pl.Trainer(
