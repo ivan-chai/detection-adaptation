@@ -11,9 +11,12 @@ setup(
     packages=find_namespace_packages(where="src"),
     package_dir={"": "src"},
     install_requires=[
-        "pyyaml",
         "numpy",
         "torch",
-        "pytorch_lightning>=1.0.0"
+        "torchvision",
+        "Pillow",
+        "pytorch-lightning==1.0.3",
+        "PyYAML",
+        "scipy"
     ]
 )
