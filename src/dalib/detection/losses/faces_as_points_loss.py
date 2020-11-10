@@ -186,7 +186,7 @@ class FacesAsPointsLoss():
         offsets: image location that corresponds to upper-left superpixel of a prediction tensor
         stride: stride of the prediction tensor
         a, b: focal loss parameters
-        landmarks_available: True if landmarks are available
+        use_landmarks: True if landmarks are available
         weights: the weights with which sub-task losses are weighted
 
     Bounding box and landmarks coordinates should be in (H, W) frame
@@ -198,7 +198,7 @@ class FacesAsPointsLoss():
         5-: landmarks prediction (if available)
 
     Target should be a list of dicts: [{"bboxes": tensor<N, 4>, "landmarks": tensor<N, n, 2>, "landmarks_mask": tensor<N>}]
-    If landmarks_available flag is False, landmarks and landmarks_mask are ignored
+    If use_landmarks flag is False, landmarks and landmarks_mask are ignored
 
     self.loss_dict holds separate values of each sub-task loss last evaluated
     """
@@ -209,7 +209,7 @@ class FacesAsPointsLoss():
             ("stride", None),
             ("a", 2),
             ("b", 4),
-            ("landmarks_available", True),
+            ("use_landmarks", True),
             ("weights", {
                     "cls_loss": 1.,
                     "delta_loss": 1.,
@@ -224,17 +224,15 @@ class FacesAsPointsLoss():
         for key, value in config.items():
             self.__dict__[key] = value
 
-    def __call__(self, prediction, target, landmarks_available=None):
+    def __call__(self, prediction, target, use_landmarks=None):
         bboxes_batch = [t["bboxes"] for t in target]
-        landmarks_available = landmarks_available if landmarks_available is not None else self.landmarks_available
-        if landmarks_available:
+        use_landmarks = use_landmarks if use_landmarks is not None else self.use_landmarks
+        if use_landmarks:
             landmarks_batch = [t["landmarks"] for t in target]
             landmarks_mask_batch = [t["landmarks_mask"] for t in target]
 
         offsets = self.offsets
         stride = self.stride
-
-        #prediction = prediction.cpu()
 
         cls_losses = []
         heatmap_batch = prediction[:,0,...]
@@ -266,7 +264,7 @@ class FacesAsPointsLoss():
             size_losses.append(loss)
         size_losses = torch.stack(size_losses)
 
-        if landmarks_available:
+        if use_landmarks:
             lm_batch = prediction[:,5:,...].permute(0,2,3,1)
             lm_batch = lm_batch.reshape(*lm_batch.shape[:-1], -1, 2)
             lms_losses = []
@@ -292,7 +290,7 @@ class FacesAsPointsLoss():
             "delta_loss": delta_losses.mean(),
             "size_loss": size_losses.mean(),
         }
-        if landmarks_available:
+        if use_landmarks:
             loss_dict["lms_loss"] = lms_losses.mean()
 
         self.loss_dict = {k: v.item() for k, v in loss_dict.items()}

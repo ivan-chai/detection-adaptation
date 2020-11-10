@@ -7,7 +7,7 @@ from tqdm import tqdm
 
 from .widerface import WIDERFACEDataset
 
-from utils import calculate_AP, calculate_PR
+from dalib.detection import calculate_AP, calculate_PR
 
 class WIDERFACEEvaluator:
     def __init__(self, dataset_root, detector, device="cuda:0"):
@@ -24,7 +24,10 @@ class WIDERFACEEvaluator:
 
             with torch.no_grad():
                 pred, = detector(to_tensor(img)[None,...].to(device), threshold=0.01)
-            pred_and_tar[event_name][file_name] = {"scores": pred["scores"].numpy(), "bboxes_pr": pred["bboxes"].numpy(), "bboxes_gt": ann["bboxes"]}
+                for key in pred.keys():
+                    if isinstance(pred[key], torch.Tensor):
+                        pred[key] = pred[key].numpy()
+            pred_and_tar[event_name][file_name] = {"scores": pred["scores"], "bboxes_pr": pred["bboxes"], "bboxes_gt": ann["bboxes"]}
 
         self.pred_and_tar = pred_and_tar
 

@@ -6,11 +6,10 @@ import numpy as np
 
 import pytorch_lightning as pl
 
-from dalib.config import prepare_config
 from collections import OrderedDict
 
-from utils import FacesAsPointsLoss
-from utils import calculate_PR, calculate_AP
+from dalib.config import prepare_config
+from dalib.detection import FacesAsPointsLoss, calculate_PR, calculate_AP
 
 class EvalHead(nn.Module):
     @staticmethod

@@ -1,0 +1,21 @@
+model:
+  net:
+      _type: ResnetFPN
+      depth: 18
+      n_points: 5
+data:
+  batch_size: 32
+  collate_config:
+      grid_h: 2
+      grid_w: 2
+opt:
+  steps: 200000
+  start_lr: 1e-5
+  max_lr: 6e-4
+  end_lr: 1e-6
+  pct_start: 0.4
+  base_momentum: 0.95 
+  max_momentum: 0.85
+  anneal: linear
+  precision: 16
+seed: 42
