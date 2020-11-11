@@ -12,6 +12,7 @@ setup(
     package_dir={"": "src"},
     install_requires=[
         "numpy",
+        "optuna",
         "torch",
         "torchvision",
         "Pillow",
