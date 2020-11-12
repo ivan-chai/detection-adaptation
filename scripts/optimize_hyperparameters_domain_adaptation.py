@@ -113,6 +113,7 @@ def main(args):
     print("  Params: ")
     for key, value in trial.params.items():
         print("    {}: {}".format(key, value))
+    study.trials_dataframe().to_csv(os.path.join(args.log_dir, "hyperparameters_study.csv"))
 
 
 def get_args():
