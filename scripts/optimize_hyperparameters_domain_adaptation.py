@@ -22,17 +22,6 @@ PARAMETER_SPACE_TO_TRIAL_METHOD = {
 }
 
 
-class MetricsCallback(pl.Callback):
-    """PyTorch Lightning metric callback."""
-
-    def __init__(self):
-        super().__init__()
-        self.metrics = []
-
-    def on_validation_end(self, trainer, pl_module):
-        self.metrics.append(trainer.callback_metrics)
-
-
 def get_config_with_trial_hyperparameters(config, trial):
     new_config = {}
     for key, value in config.items():
@@ -94,17 +83,16 @@ def objective(trial, args, config):
             args.log_dir, "trial_{}".format(trial.number), "{epoch}"
         ), **config["checkpoint_callback"]
     )
-    metrics_callback = MetricsCallback()
     trainer = pl.Trainer(
         logger=False,
         gpus=args.gpus,
         checkpoint_callback=checkpoint_callback,
         deterministic=True,
-        callbacks=[metrics_callback, PyTorchLightningPruningCallback(trial, monitor=config["checkpoint_callback"]["monitor"])],
+        callbacks=[PyTorchLightningPruningCallback(trial, monitor=config["checkpoint_callback"]["monitor"])],
         **config["trainer"]
     )
     trainer.fit(model, datamodule=dm)
-    return metrics_callback.metrics[-1][config["checkpoint_callback"]["monitor"]].item()
+    return checkpoint_callback.best_model_score
 
 
 def main(args):
