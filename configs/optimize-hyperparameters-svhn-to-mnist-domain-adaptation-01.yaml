@@ -28,3 +28,5 @@ model:
 seed: 42
 trainer:
   max_epochs: 5
+  progress_bar_refresh_rate: 0
+  weights_summary: ~

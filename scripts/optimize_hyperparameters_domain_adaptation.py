@@ -76,15 +76,10 @@ def objective(trial, args, config):
     if dm.config["domain_adaptation"] != model.config["domain_adaptation"]:
         raise ValueError("domain_adaptation parameter of datamodule and model must be the same")
 
-    checkpoint_callback = ModelCheckpoint(
-        os.path.join(
-            args.log_dir, args.name, "trial_{}".format(trial.number), "{epoch}"
-        ) if args.name is not None else os.path.join(
-            args.log_dir, "trial_{}".format(trial.number), "{epoch}"
-        ), **config["checkpoint_callback"]
-    )
+    tb_logger = TensorBoardLogger(args.log_dir, name=args.name)
+    checkpoint_callback = ModelCheckpoint(**config["checkpoint_callback"])
     trainer = pl.Trainer(
-        logger=False,
+        logger=tb_logger,
         gpus=args.gpus,
         checkpoint_callback=checkpoint_callback,
         deterministic=True,
@@ -113,7 +108,12 @@ def main(args):
     print("  Params: ")
     for key, value in trial.params.items():
         print("    {}: {}".format(key, value))
-    study.trials_dataframe().to_csv(os.path.join(args.log_dir, "hyperparameters_study.csv"))
+
+    study_path = args.log_dir if args.name is None else os.path.join(args.log_dir, args.name)
+
+    study.trials_dataframe().to_csv(
+        os.path.join(study_path, "hyperparameters_study.csv")
+    )
 
 
 def get_args():
