@@ -3,6 +3,8 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+from itertools import chain
+
 from pytorch_lightning.metrics.functional import accuracy
 from torchvision import models
 
@@ -16,6 +18,8 @@ class SVHNToMNISTModel(pl.LightningModule):
     Config:
         - adaptation_factor: Multiplier in gradient reversal layer.
         - domain_adaptation: If true, domain adaptation is used.
+        - domain_classifier_loss: Only "binary_cross_entropy_with_logits" and "mse_loss" is valid values.
+        - gan_style_training: If true, alternating training is used for label predictor and domain classifier.
         - lr: Learning rate.
         - use_only_y_labels_from_source_domain: If true, only class labels
         from the source domain are used for training. Ignored if domain_adaptation is false.
@@ -26,6 +30,8 @@ class SVHNToMNISTModel(pl.LightningModule):
         return {
             "adaptation_factor": 0.1,
             "domain_adaptation": True,
+            "domain_classifier_loss": "binary_cross_entropy_with_logits",
+            "gan_style_training": False,
             "lr": 1e-3,
             "use_only_y_labels_from_source_domain": True
         }
@@ -46,6 +52,7 @@ class SVHNToMNISTModel(pl.LightningModule):
                 GradientReversalLayer(lambda_=self.config["adaptation_factor"]),
                 nn.Linear(fe_output_dim, 1)
             )
+        self.domain_classifier_loss = getattr(F, self.config["domain_classifier_loss"])
 
     def forward(self, x):
         x = self.feature_extractor(x)
@@ -57,25 +64,60 @@ class SVHNToMNISTModel(pl.LightningModule):
             return y_logits, None
 
     def configure_optimizers(self):
-        optimizer = torch.optim.Adam(self.parameters(), lr=self.config["lr"])
         steps_per_epoch = (
             len(self.trainer.datamodule.train_dataset) // self.trainer.datamodule.config["batch_size"]
         ) // self.trainer.accumulate_grad_batches
-        scheduler = {
-            "scheduler": torch.optim.lr_scheduler.OneCycleLR(
-                optimizer,
-                self.config["lr"],
-                epochs=self.trainer.max_epochs,
-                steps_per_epoch=steps_per_epoch
-            ),
-            "interval": "step",
-            "frequency": 1,
-            "reduce_on_plateau": False,
-            "monitor": "val_loss"
-        }
-        return [optimizer], [scheduler]
+        if self.config["gan_style_training"]:
+            optimizer_y = torch.optim.Adam(
+                chain(self.feature_extractor.parameters(), self.label_predictor.parameters()),
+                lr=self.config["lr"]
+            )
+            scheduler_y = {
+                "scheduler": torch.optim.lr_scheduler.OneCycleLR(
+                    optimizer_y,
+                    self.config["lr"],
+                    epochs=self.trainer.max_epochs,
+                    steps_per_epoch=steps_per_epoch
+                ),
+                "interval": "step",
+                "frequency": 1,
+                "reduce_on_plateau": False,
+                "monitor": "val_loss"
+            }
+            optimizer_d = torch.optim.Adam(
+                chain(self.feature_extractor.parameters(), self.domain_classifier.parameters()),
+                lr=self.config["lr"]
+            )
+            scheduler_d = {
+                "scheduler": torch.optim.lr_scheduler.OneCycleLR(
+                    optimizer_d,
+                    self.config["lr"],
+                    epochs=self.trainer.max_epochs,
+                    steps_per_epoch=steps_per_epoch
+                ),
+                "interval": "step",
+                "frequency": 1,
+                "reduce_on_plateau": False,
+                "monitor": "val_loss"
+            }
+            return [optimizer_y, optimizer_d], [scheduler_y, scheduler_d]
+        else:
+            optimizer = torch.optim.Adam(self.parameters(), lr=self.config["lr"])
+            scheduler = {
+                "scheduler": torch.optim.lr_scheduler.OneCycleLR(
+                    optimizer,
+                    self.config["lr"],
+                    epochs=self.trainer.max_epochs,
+                    steps_per_epoch=steps_per_epoch
+                ),
+                "interval": "step",
+                "frequency": 1,
+                "reduce_on_plateau": False,
+                "monitor": "val_loss"
+            }
+            return [optimizer], [scheduler]
 
-    def training_step(self, batch, batch_idx):
+    def training_step(self, batch, batch_idx, optimizer_idx=None):
         if self.config["domain_adaptation"]:
             if self.config["use_only_y_labels_from_source_domain"]:
                 x, y, domain_label = batch
@@ -90,18 +132,25 @@ class SVHNToMNISTModel(pl.LightningModule):
                 y_logits, domain_logits = self(x)
 
                 loss_y = F.cross_entropy(y_logits, y)
-            loss_d = F.binary_cross_entropy_with_logits(domain_logits, domain_label.float())
-            loss = loss_y + loss_d
-
-            self.log("loss_y", loss_y, prog_bar=True)
-            self.log("loss_d", loss_d, prog_bar=True)
+            loss_d = self.domain_classifier_loss(domain_logits, domain_label.float())
+            if optimizer_idx == None:
+                loss = loss_y + loss_d
+                self.log("loss_y", loss_y, prog_bar=True)
+                self.log("loss_d", loss_d, prog_bar=True)
+                self.log("train_loss", loss)
+            elif optimizer_idx == 0:
+                self.log("loss_y", loss_y, prog_bar=True)
+                loss = loss_y
+            elif optimizer_idx == 1:
+                self.log("loss_d", loss_d, prog_bar=True)
+                loss = loss_d
         else:
             x, y = batch
             y_logits, _ = self(x)
 
             loss = F.cross_entropy(y_logits, y)
+            self.log("train_loss", loss)
 
-        self.log("train_loss", loss)
         return loss
 
     def validation_step(self, batch, batch_idx):
