@@ -16,12 +16,12 @@ hyperparameter_optimization:
 model:
   _type: SVHNToMNISTModel
   adaptation_factor:
-    parameter_space: discrete_uniform
+    parameter_space: float
     parameter_space_arguments:
       name: adaptation_factor
       low: 0
       high: 1
-      q: 0.01
+      step: 0.01
   domain_adaptation: *domain_adaptation
   lr: 0.001
   use_only_y_labels_from_source_domain: true
