@@ -34,30 +34,7 @@ from pytorch_lightning.callbacks.model_checkpoint import ModelCheckpoint
 from pytorch_lightning.loggers import TensorBoardLogger
 
 from dalib.config import prepare_config, read_config
-from dalib import datasets, models
-
-
-OPTIMIZE_KEY = "parameter_space"
-PARAMETER_SPACE_TO_TRIAL_METHOD = {
-    "categorical": "suggest_categorical",
-    "float": "suggest_float",
-    "int": "suggest_int"
-}
-
-
-def get_config_with_trial_hyperparameters(config, trial):
-    new_config = {}
-    for key, value in config.items():
-        if isinstance(value, dict):
-            if OPTIMIZE_KEY in value:
-                new_config[key] = getattr(
-                    trial, PARAMETER_SPACE_TO_TRIAL_METHOD[value[OPTIMIZE_KEY]]
-                )(**value["parameter_space_arguments"])
-            else:
-                new_config[key] = get_config_with_trial_hyperparameters(value, trial)
-        else:
-            new_config[key] = value
-    return new_config
+from dalib import datasets, hopt, models
 
 
 def get_model_class(config):
@@ -85,7 +62,7 @@ def get_default_config():
 
 
 def objective(trial, args, config):
-    config = get_config_with_trial_hyperparameters(config, trial)
+    config = hopt.get_config_with_trial_hyperparameters(config, trial)
     config = prepare_config(get_default_config(), config)
     pl.seed_everything(config["seed"])
     dm = get_datamodule_class(config)(
@@ -95,10 +72,6 @@ def objective(trial, args, config):
     model = get_model_class(config)(
         config["model"]
     )
-
-    if dm.config["domain_adaptation"] != model.config["domain_adaptation"]:
-        raise ValueError("domain_adaptation parameter of datamodule and model must be the same")
-
     tb_logger = TensorBoardLogger(args.log_dir, name=args.name)
     checkpoint_callback = ModelCheckpoint(**config["checkpoint_callback"])
     trainer = pl.Trainer(
@@ -113,8 +86,7 @@ def objective(trial, args, config):
     return checkpoint_callback.best_model_score
 
 
-def main(args):
-    config = read_config(args.config_path)
+def run_hyperparameter_study(config, args, objective):
     pruner = optuna.pruners.MedianPruner() if config["hyperparameter_optimization"]["pruninig"] else optuna.pruners.NopPruner()
     study = optuna.create_study(
         direction="maximize" if config["checkpoint_callback"]["mode"] == "max" else "minimize",
@@ -124,19 +96,16 @@ def main(args):
         lambda trial: objective(trial, args, config),
         n_trials=config["hyperparameter_optimization"]["n_trials"]
     )
-    print("Number of finished trials: {}".format(len(study.trials)))
-    print("Best trial:")
-    trial = study.best_trial
-    print("  Value: {}".format(trial.value))
-    print("  Params: ")
-    for key, value in trial.params.items():
-        print("    {}: {}".format(key, value))
-
+    hopt.print_summary(study)
     study_path = args.log_dir if args.name is None else os.path.join(args.log_dir, args.name)
-
     study.trials_dataframe().to_csv(
         os.path.join(study_path, "hyperparameters_study.csv")
     )
+
+
+def main(args):
+    config = read_config(args.config_path)
+    run_hyperparameter_study(config, args, objective)
 
 
 def get_args():

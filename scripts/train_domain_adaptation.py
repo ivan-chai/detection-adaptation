@@ -44,10 +44,6 @@ def main(args):
     model = get_model_class(config)(
         config["model"]
     )
-
-    if dm.config["domain_adaptation"] != model.config["domain_adaptation"]:
-        raise ValueError("domain_adaptation parameter of datamodule and model must be the same")
-
     tb_logger = TensorBoardLogger(args.log_dir, name=args.name)
     checkpoint_callback = ModelCheckpoint(**config["checkpoint_callback"])
     trainer = pl.Trainer(
