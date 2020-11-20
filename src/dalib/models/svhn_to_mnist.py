@@ -63,58 +63,39 @@ class SVHNToMNISTModel(pl.LightningModule):
         else:
             return y_logits, None
 
+    def _configure_single_optimizer(self, parameters):
+        optimizer = torch.optim.Adam(
+            parameters,
+            lr=self.config["lr"]
+        )
+        scheduler = {
+            "scheduler": torch.optim.lr_scheduler.OneCycleLR(
+                optimizer,
+                self.config["lr"],
+                epochs=self.trainer.max_epochs,
+                steps_per_epoch=self.steps_per_epoch
+            ),
+            "interval": "step",
+            "frequency": 1,
+            "reduce_on_plateau": False,
+            "monitor": "val_loss"
+        }
+        return optimizer, scheduler
+
     def configure_optimizers(self):
-        steps_per_epoch = (
+        self.steps_per_epoch = (
             len(self.trainer.datamodule.train_dataset) // self.trainer.datamodule.config["batch_size"]
         ) // self.trainer.accumulate_grad_batches
         if self.config["gan_style_training"]:
-            optimizer_y = torch.optim.Adam(
-                chain(self.feature_extractor.parameters(), self.label_predictor.parameters()),
-                lr=self.config["lr"]
+            optimizer_y, scheduler_y = self._configure_single_optimizer(
+                chain(self.feature_extractor.parameters(), self.label_predictor.parameters())
             )
-            scheduler_y = {
-                "scheduler": torch.optim.lr_scheduler.OneCycleLR(
-                    optimizer_y,
-                    self.config["lr"],
-                    epochs=self.trainer.max_epochs,
-                    steps_per_epoch=steps_per_epoch
-                ),
-                "interval": "step",
-                "frequency": 1,
-                "reduce_on_plateau": False,
-                "monitor": "val_loss"
-            }
-            optimizer_d = torch.optim.Adam(
-                chain(self.feature_extractor.parameters(), self.domain_classifier.parameters()),
-                lr=self.config["lr"]
+            optimizer_d, scheduler_d = self._configure_single_optimizer(
+                chain(self.feature_extractor.parameters(), self.domain_classifier.parameters())
             )
-            scheduler_d = {
-                "scheduler": torch.optim.lr_scheduler.OneCycleLR(
-                    optimizer_d,
-                    self.config["lr"],
-                    epochs=self.trainer.max_epochs,
-                    steps_per_epoch=steps_per_epoch
-                ),
-                "interval": "step",
-                "frequency": 1,
-                "reduce_on_plateau": False,
-                "monitor": "val_loss"
-            }
             return [optimizer_y, optimizer_d], [scheduler_y, scheduler_d]
         else:
-            optimizer = torch.optim.Adam(self.parameters(), lr=self.config["lr"])
-            scheduler = {
-                "scheduler": torch.optim.lr_scheduler.OneCycleLR(
-                    optimizer,
-                    self.config["lr"],
-                    epochs=self.trainer.max_epochs,
-                    steps_per_epoch=steps_per_epoch
-                ),
-                "interval": "step",
-                "frequency": 1,
-                "reduce_on_plateau": False,
-                "monitor": "val_loss"
-            }
+            optimizer, scheduler = self._configure_single_optimizer(self.parameters())
             return [optimizer], [scheduler]
 
     def training_step(self, batch, batch_idx, optimizer_idx=None):
