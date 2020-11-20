@@ -110,7 +110,7 @@ def main(args):
 
 def get_args():
     parser = argparse.ArgumentParser(
-        description="Train domain adaptation model."
+        description="Optimize model hyperparameters."
     )
     parser.add_argument(
         "-d", "--data-dir",
