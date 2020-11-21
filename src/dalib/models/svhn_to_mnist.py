@@ -21,6 +21,7 @@ class SVHNToMNISTModel(pl.LightningModule):
         - domain_classifier_loss: Only "binary_cross_entropy_with_logits" and "mse_loss" is valid values.
         - gan_style_training: If true, alternating training is used for label predictor and domain classifier.
         - lr: Learning rate.
+        - target_domain_label: Label of target domain. Ignored if domain_adaptation is false.
         - use_only_y_labels_from_source_domain: If true, only class labels
         from the source domain are used for training. Ignored if domain_adaptation is false.
     """
@@ -33,6 +34,7 @@ class SVHNToMNISTModel(pl.LightningModule):
             "domain_classifier_loss": "binary_cross_entropy_with_logits",
             "gan_style_training": False,
             "lr": 1e-3,
+            "target_domain_label": 1,
             "use_only_y_labels_from_source_domain": True
         }
 
@@ -98,50 +100,51 @@ class SVHNToMNISTModel(pl.LightningModule):
             optimizer, scheduler = self._configure_single_optimizer(self.parameters())
             return [optimizer], [scheduler]
 
+    def _compute_output_loss(self, y_logits, y, is_source_domain=None, mode="train"):
+        if self.config["domain_adaptation"] and is_source_domain is not None:
+            output_loss = F.cross_entropy(y_logits, y, reduction="none")[is_source_domain].mean()
+            if not is_source_domain.any():
+                output_loss = 0
+        else:
+            output_loss = F.cross_entropy(y_logits, y)
+        self.log(f"{mode}_output_loss", output_loss, prog_bar=True)
+        return output_loss
+
+    def _compute_discriminator_loss(self, domain_logits, domain_label, mode="train"):
+        discriminator_loss = self.domain_classifier_loss(domain_logits, domain_label.float())
+        self.log(f"{mode}_discriminator_loss", discriminator_loss, prog_bar=True)
+        return discriminator_loss
+
     def training_step(self, batch, batch_idx, optimizer_idx=None):
+        x, y = batch[:2]
+        y_logits, domain_logits = self(x)
         if self.config["domain_adaptation"]:
+            domain_label = batch[2]
             if self.config["use_only_y_labels_from_source_domain"]:
-                x, y, domain_label = batch
-                is_source_domain = domain_label == 0
-                y_logits, domain_logits = self(x)
-
-                loss_y = F.cross_entropy(y_logits, y, reduction="none")[is_source_domain].mean()
-                if not is_source_domain.any():
-                    loss_y = 0
+                is_source_domain = domain_label != self.config["target_domain_label"]
             else:
-                x, y, domain_label = batch
-                y_logits, domain_logits = self(x)
+                is_source_domain = None
 
-                loss_y = F.cross_entropy(y_logits, y)
-            loss_d = self.domain_classifier_loss(domain_logits, domain_label.float())
-            if optimizer_idx == None:
-                loss = loss_y + loss_d
-                self.log("loss_y", loss_y, prog_bar=True)
-                self.log("loss_d", loss_d, prog_bar=True)
+            if optimizer_idx is None:
+                loss = self._compute_output_loss(y_logits, y, is_source_domain) + \
+                    self._compute_discriminator_loss(domain_logits, domain_label)
                 self.log("train_loss", loss)
             elif optimizer_idx == 0:
-                self.log("loss_y", loss_y, prog_bar=True)
-                loss = loss_y
+                loss = self._compute_output_loss(y_logits, y, is_source_domain)
             elif optimizer_idx == 1:
-                self.log("loss_d", loss_d, prog_bar=True)
-                loss = loss_d
+                loss = self._compute_discriminator_loss(domain_logits, domain_label)
         else:
-            x, y = batch
-            y_logits, _ = self(x)
-
-            loss = F.cross_entropy(y_logits, y)
-            self.log("train_loss", loss)
-
+            loss = self._compute_output_loss(y_logits, y)
         return loss
 
     def validation_step(self, batch, batch_idx):
         x, y = batch
-        y_logits, _ = self(x)
-
-        loss = F.cross_entropy(y_logits, y)
+        y_logits, domain_logits = self(x)
+        output_loss = self._compute_output_loss(y_logits, y, mode="val")
+        if domain_logits is not None:
+            domain_label = torch.ones_like(y) * self.config["target_domain_label"]
+            self._compute_discriminator_loss(domain_logits, domain_label, mode="val")
         preds = torch.argmax(y_logits, dim=1)
         acc = accuracy(preds, y)
-
-        self.log("val_loss", loss, prog_bar=True)
         self.log("val_acc", acc, prog_bar=True)
-        return loss
+        return output_loss
