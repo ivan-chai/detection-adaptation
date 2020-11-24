@@ -1,2 +1,2 @@
 from .average_precision import AveragePrecisionCalculator
-from .dataset_evaluator import DatasetEvaluator
+from .dataset_evaluator import DetectionDatasetEvaluator

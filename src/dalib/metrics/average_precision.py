@@ -1,12 +1,14 @@
 import torch
 import numpy as np
 
-def iou(boxes_a, boxes_b):
-    """
-    boxes_a: array<N_a, 4>
-    boxes_b: array<N_b, 4>
 
-    returns: array<N_a, N_b>
+def iou(boxes_a, boxes_b):
+    """Args:
+        boxes_a: Numpy array of boxes with shape :math:`(N_a, 4)`.
+        boxes_b: Numpy array of boxes with shape :math:`(N_b, 4)`.
+
+    Returns:
+        Numpy matrix with IoU of each pair of boxes  with shape :math:`(N_a, N_b)`.
     """
     boxes_a = boxes_a[:,None,:]
     boxes_b = boxes_b[None,:,:]
@@ -22,7 +24,23 @@ def iou(boxes_a, boxes_b):
 
     return iou_mat
 
+
 def count_gt_tp_fp(scores, bboxes_pr, bboxes_gt, subsets=None, resolution=100, iou_threshold=0.5):
+    """Args:
+        scores: Numpy array of scores with shape :math:`(N_pr,)`.
+        bboxes_pr: Numpy array of predicted bboxes with shape :math:`(N_pr, 4)`.
+        bboxes_gt: Numpy array of ground truth bboxes with shape :math:`(N_gt, 4)`.
+        subsets: None or list of arrays of ground truth bboxes indices. Default: None.
+        resolution: Int, score resolution. Scores thresholds are generated
+            via np.linspace(0,1,resolution). Default: 100.
+        iou_threshold: Float, threshold for IoU of predicted and ground truth bboxes for
+            separating hits and misses.
+
+    Returns:
+        Numpy array of ground truth, true positive and false positive counts 
+        for different values of IoU thresholds. Has shape :math:`(resolution, 3)` if subsets is None,
+        and :math:`(len(subsets), resolution, 3)` otherwise.
+    """
     if isinstance(scores, torch.Tensor): scores = scores.numpy()
     if isinstance(bboxes_pr, torch.Tensor): bboxes_pr = bboxes_pr.numpy()
     if isinstance(bboxes_gt, torch.Tensor): bboxes_gt = bboxes_gt.numpy()
@@ -60,7 +78,6 @@ def count_gt_tp_fp(scores, bboxes_pr, bboxes_gt, subsets=None, resolution=100, i
             return result.squeeze(0)
         else:
             return result
-
 
     iou_mat = iou(bboxes_pr, bboxes_gt)
 
@@ -101,7 +118,15 @@ def count_gt_tp_fp(scores, bboxes_pr, bboxes_gt, subsets=None, resolution=100, i
     else:
         return result
 
-def calculate_PR(tfp_table):
+
+def calculate_PR(gt_tp_fp_table):
+    """Args:
+        gt_tp_fp_table: Numpy array of ground truth, true positives and false positives counts
+            of shape :math:`(resolution, 3)` or :math:`(n_subsets, resolution, 3)`.
+
+    Returns:
+        Numpy array of precision and recall scores of shape :math:`(resolution, 2)`.
+    """
     n_pred = tfp_table[..., 1] + tfp_table[..., 2]
     precision = tfp_table[..., 1] / np.maximum(1, n_pred)
     precision[n_pred == 0] = 1
@@ -113,37 +138,46 @@ def calculate_PR(tfp_table):
 
     return np.stack([precision, recall], axis=-1)
 
+
 def calculate_AP(PR_table):
+    """Args:
+        PR_table: Numpy array of precision and recall scores of shape :math:`(resolution, 2)`.
+
+    Returns:
+        Float, average precision score. 
+    """
     PR_table = np.concatenate([PR_table, np.array([[1,0]])], axis=0)
     heights = PR_table[:-1,0]
     widths = PR_table[:-1,1] - PR_table[1:,1]
     area = (heights*widths).sum()
     return area
 
+
 class AveragePrecisionCalculator:
-    """Utility class for calculating average precision (AP)
-    and generating precision-recall curves.
+    """Utility class for calculation of average precision (AP)
+    and generation of precision-recall curves.
 
     Args:
-        - discriminator: a callable that decides whether to include a given
-          sample in statistics and over which subsets of targets
-          to calculate the metrics.
-              Args:
-                  - item: {
-                      "scores": :math:`(N,)`,
-                      "bboxes_pr": :math:`(N,4)`,
-                      "bboxes_gt": :math:'N_{gt},4)',
+        discriminator: a callable that decides whether to include a given
+            sample in statistics and over which subsets of targets
+            to calculate the metrics.
+                Args:
+                    item: {
+                        "scores":  :math:`(N,)`,
+                        "bboxes_pr": :math:`(N,4)`,
+                        "bboxes_gt": :math:'(N_{gt},4)',
                       ...
                     }
-              Returns: (
-                bool, True if include the sample else False
-                {
-                    subset_name: :math:`(N_{sub},)` of ground truth labels indices
-                    for sub in subsets
-                }
-              )
-        - resolution: number of score thresholds
-        - iou_threshold: true positive threshold
+                Returns:
+                (
+                        bool, True if include the sample else False
+                    {
+                        subset_name: Numpy array :math:`(N_{sub},)` of ground truth labels indices
+                            for sub in subsets
+                    }
+                )
+        resolution: Int, number of score thresholds.
+        iou_threshold: Float, true positive threshold.
     """
     def __init__(self, discriminator=None, resolution=100, iou_threshold=0.5):
         self.discriminator = discriminator
@@ -156,9 +190,9 @@ class AveragePrecisionCalculator:
         subsets = {"all": np.arange(len(item["bboxes_gt"]))}
         return do_count, subsets
 
-    def fit_predict(self, data):
+    def __call__(self, data):
         """Args:
-            - data: [
+            data: [
                 {
                    "scores": :math:(N_{i},),
                    "bboxes_pr": :math:(N_{i},4),
@@ -168,7 +202,7 @@ class AveragePrecisionCalculator:
                 for i in range(number_of_samples)
             ]
         Returns: {
-            subset_name: subset_average_precision
+            A dictionary of AP scores by subset name.
         }
         """
         discriminator = self.discriminator if self.discriminator is not None\
