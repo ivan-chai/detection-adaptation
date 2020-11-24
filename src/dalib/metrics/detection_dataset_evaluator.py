@@ -9,9 +9,18 @@ from . import AveragePrecisionCalculator
 
 
 class DetectionDatasetEvaluator:
-    """Utility class for evaluating detection quality over a dataset."""
-    def get_dataset(self):
-        raise NotImplementedError()
+    """Utility class for evaluating detection quality over a dataset.
+
+    Children should implement :meth:`get_default_discriminator` or provide custom discriminator
+    function on call (see :class:`AveragePrecisionCalculator` docs for signature). 
+
+    Children can override :meth:`enrich` static method to enrich ground truth labels for discriminator to use.
+
+    Args:
+        dataset: torch.utils.data.Dataset for evaluation.
+    """
+    def __init__(self, dataset):
+        self.dataset = dataset
 
     @staticmethod
     def enrich(target):
@@ -30,15 +39,9 @@ class DetectionDatasetEvaluator:
                 ]
             device: device on which prediction generation is done. Default: "cuda:0".
 
-        Children should implement :meth:`get_default_discriminator` or provide custom discriminator
-        function on call (see :class:`AveragePrecisionCalculator` docs for signature). 
-
-        Children should implement :meth:`get_dataset` to get the evaluation dataset.
-
-        Children can override :meth:`enrich` static method to enrich ground truth labels for discriminator to use.
         """
         detector = detector.eval().to(device)
-        dataset = self.get_dataset()
+        dataset = self.dataset
 
         data = []
 
