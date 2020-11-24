@@ -5,6 +5,7 @@ from torchvision.transforms.functional import to_tensor
 
 from tqdm import tqdm
 
+
 from collections import OrderedDict
 
 from ..config import prepare_config
@@ -61,7 +62,6 @@ class DetectionDatasetEvaluator:
             detections. Default: 0.5.
 
     """
-
     @staticmethod
     def get_default_config():
         return OrderedDict([
@@ -136,7 +136,6 @@ class DetectionDatasetEvaluator:
            Numpy array of AP scores with shape :math:`(N_images,)` if per_image is True,
            dictionary of AP scores by subset name otherwise.
         """
-
         ap = AveragePrecisionCalculator(
                 self.discriminator,
                 self.config["resolution"],

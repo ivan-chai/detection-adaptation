@@ -104,7 +104,7 @@ def count_gt_tp_fp(scores, bboxes_pr, bboxes_gt, subsets=None, resolution=100, i
     for subset in subsets:
         _hit_scores = hit_scores[subset]
         _matched_scores = scores[np.isin(best_match, subset)]
-
+       
         N_tp = (_hit_scores[None,:] > scores_grid[:,None]).sum(axis=1)
         N_fp = misses_table + (_matched_scores[None,:] >= scores_grid[:,None]).sum(axis=1) - N_tp
         N_gt = len(subset)*np.ones(resolution).astype(np.int)
