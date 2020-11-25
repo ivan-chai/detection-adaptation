@@ -72,7 +72,8 @@ def read_annotations(root, split):
 
 
 class WIDERFACEDataset(torch.utils.data.Dataset):
-    """
+    """See http://shuoyang1213.me/WIDERFACE/. Label files with
+    landmarks annotations is available at https://www.dropbox.com/s/7j70r3eeepe4r2g/retinaface_gt_v1.1.zip?dl=0.
     root
     ---train
     ------images

@@ -12,7 +12,9 @@ from copy import deepcopy
 
 
 class FaceMaskDataset(data.Dataset):
-    """Folder structure:
+    """See https://www.kaggle.com/andrewmvd/face-mask-detection.
+
+    Folder structure:
         root
         ---annotations
         ------maksssksksss0.xml

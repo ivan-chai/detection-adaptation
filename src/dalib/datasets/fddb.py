@@ -52,7 +52,9 @@ def ellipse_to_bbox(ellipse):
 
 
 class FDDBDataset(data.Dataset):
-    """Folder structure:
+    """See http://vis-www.cs.umass.edu/fddb/.
+
+    Folder structure:
         root
         ---folds
         ------FDDB-fold-01-ellipseList.txt

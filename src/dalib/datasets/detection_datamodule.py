@@ -6,7 +6,7 @@ import numpy as np
 
 from ..config import prepare_config
 from .detection_transforms import OnBboxCropper
-from .collection import Collection
+from .collection import DetectionDatasetsCollection
 
 from collections import OrderedDict
 
@@ -131,26 +131,27 @@ class DetectionDataModule(pl.LightningDataModule):
     """A lightning datamodule wrapper for detection datasets.
 
     Args:
-        - path_dict: a dict of dataset paths. If path for a dataset
-          is not provided here, it is inferred from environment variables:
-          WIDERFACE_DIR, FDDB_DIR, FACEMASK_DIR. Default: {}
+        data_dir: path to the directory with datasets.
 
     Config:
-        - datasets: list of datasets and weights to use for training.
-          Default: [{"name": "WIDERFACE", "weight": 1.0}]
-        - transform: config for OnBboxCropper. Default: None
-        - collate: config for ImageGridCollator. Default: {"grid_h": 1, "grid_w": 1}
-        - num_workers: numbers of workers for data prep. Default: 8
-        - batch_size: Default: 32
-        - drop_last: whether to drop last (incomplete) batch. Default: True
-        - val_samples: number of samples to use for mini-validation during
-          training. Default: 512
+        datasets: list of datasets and weights to use for training.
+            Default: [{"name": "widerface", "weight": 1.0}].
+        transform: config for OnBboxCropper. Default: None.
+        collate: config for ImageGridCollator. Default: {"grid_h": 1, "grid_w": 1}.
+        num_workers: numbers of workers for data prep. Default: 8.
+        batch_size: Default: 32.
+        drop_last: whether to drop last (incomplete) batch. Default: True.
+        val_samples: number of samples to use for mini-validation during
+            training. Default: 512.
+
+    :attr:dataset_names contains a list of names of currently used datasets.
     """
+
     @staticmethod
     def get_default_config():
         return OrderedDict([
             ("datasets", [
-                {"name": "WIDERFACE", "weight": 1.0}
+                {"name": "widerface", "weight": 1.0}
             ]),
             ("transform", None),
             ("collate", {"grid_h": 1, "grid_w": 1}),
@@ -160,9 +161,10 @@ class DetectionDataModule(pl.LightningDataModule):
             ("val_samples", 512),
         ])
 
-    def __init__(self, path_dict={}, config=None):
+    def __init__(self, data_dir, config=None):
         super().__init__()
         config = prepare_config(self, config)
+
         if config["collate"] is not None:
             grid_h = config["collate"].get("grid_h", 1)
             grid_w = config["collate"].get("grid_w", 1)
@@ -173,8 +175,9 @@ class DetectionDataModule(pl.LightningDataModule):
         for item in config["datasets"]:
             ds_names.append(item["name"])
             ds_weights.append(item["weight"])
+        self.dataset_names = ds_names
 
-        ds_collection = Collection(path_dict)
+        ds_collection = DetectionDatasetsCollection(data_dir)
 
         self.train_dataset = []
         self.val_dataset = []
@@ -186,7 +189,7 @@ class DetectionDataModule(pl.LightningDataModule):
             self.train_dataset.append(train_ds)
             self.val_dataset.append(val_ds)
 
-        assert len(self.train_dataset) > 0, "No datasets provided"
+        assert len(self.train_dataset) > 0, "No datasets provided."
 
         self.train_dataset = WeightedConcatDataset(self.train_dataset, ds_weights)
         self.val_dataset = WeightedConcatDataset(self.val_dataset, ds_weights)
