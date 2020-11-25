@@ -2,12 +2,13 @@ import torch
 from torchvision.transforms.functional import to_tensor
 
 import numpy as np
-from PIL import Image, ImageDraw
 import os
 
 from copy import deepcopy
 
 from collections import OrderedDict
+
+import albumentations as A
 
 
 difficulty_to_events = {
@@ -58,14 +59,14 @@ def read_annotations(root, split):
             bbox = np.concatenate([bbox[:2], bbox[:2] + bbox[2:]])
 
             try:
-                landmarks = np.array(numbers[4:19]).reshape(5,3)[:,:2]
-                if (landmarks == -1.).all():
-                    landmarks = None
+                keypoints = np.array(numbers[4:19]).reshape(5,3)[:,:2]
+                if (keypoints == -1.).all():
+                    keypoints = None
             except:
-                landmarks = None
+                keypoints = None
 
             if (bbox[2] - bbox[0])*(bbox[3] - bbox[1]) > 0:
-                annotations[-1]["labels"].append({"bbox": bbox, "landmarks": landmarks})
+                annotations[-1]["labels"].append({"bbox": bbox, "keypoints": keypoints})
             line = fp.readline()
 
     return annotations
@@ -73,7 +74,7 @@ def read_annotations(root, split):
 
 class WIDERFACEDataset(torch.utils.data.Dataset):
     """See http://shuoyang1213.me/WIDERFACE/. Label files with
-    landmarks annotations is available at https://www.dropbox.com/s/7j70r3eeepe4r2g/retinaface_gt_v1.1.zip?dl=0.
+    keypoints annotations is available at https://www.dropbox.com/s/7j70r3eeepe4r2g/retinaface_gt_v1.1.zip?dl=0.
     root
     ---train
     ------images
@@ -85,10 +86,18 @@ class WIDERFACEDataset(torch.utils.data.Dataset):
     ------images
     ------label.txt
 
+    A sample of this dataset has a structure {
+        "image": Numpy array of shape :math:`(H, W, 3)`,
+        "bboxes": Numpy array of shape :math:`(N, 4)` (XYXY format),
+        "keypoints": Numpy array of shape :math:`(N, 5, 2)`,
+        "has_keypoints": Numpy array of shape :math:`(N,)`,
+        ...
+    }
+
     Args:
         root: path to root folder of the dataset
         split: "train", "val" or "test"
-        transform: transformations callback
+        transform: transformation or list of transformations.
     """
     def __init__(self, root, split="train", transform=None):
         assert split in os.listdir(root), f"Folder {split} not found"
@@ -103,40 +112,53 @@ class WIDERFACEDataset(torch.utils.data.Dataset):
 
     def __getitem__(self, idx):
         image_annotation = deepcopy(self.annotations[idx])
-        image = Image.open(os.path.join(self.root, image_annotation["path"]))
+        image = A.read_rgb_image(os.path.join(self.root, image_annotation["path"]))
         image_labels = image_annotation["labels"]
 
         bboxes = []
-        landmarks = []
-        has_landmarks = []
+        keypoints = []
+        has_keypoints = []
         for label in image_labels:
-            bboxes.append(label["bbox"])
-            pts = label["landmarks"]
+            bbox = label["bbox"]
+            bboxes.append(bbox)
+            pts = label["keypoints"]
             if pts is not None:
-                landmarks.append(pts)
-                has_landmarks.append(1)
+                keypoints.append(pts)
+                has_keypoints.append(1)
             else:
-                has_landmarks.append(0)
+                pts = (bbox[:2] + bbox[2:])/2
+                pts = np.tile(pts[None,:], (5,1))
+                keypoints.append(pts)
+                has_keypoints.append(0)
+
         bboxes = np.array(bboxes) if len(bboxes)>0 else np.zeros((0,4))
-        landmarks = np.array(landmarks) if len(landmarks)>0 else np.zeros((0,5,2))
-        has_landmarks = np.array(has_landmarks) if len(has_landmarks)>0 else np.zeros((0,))
-        has_landmarks = has_landmarks.astype(np.bool)
+        keypoints = np.array(keypoints) if len(keypoints)>0 else np.zeros((0,5,2))
+        has_keypoints = np.array(has_keypoints) if len(has_keypoints)>0 else np.zeros((0,))
+        has_keypoints = has_keypoints.astype(np.bool)
 
         event_name, file_name = image_annotation["path"].split("/")[-2:]
         event_name = '--'.join(event_name.split('--')[1:])
         file_name = ".".join(file_name.split(".")[:-1])
-        target = {
+
+        sample = {
+                "image": image,
                 "event": event_name,
                 "file": file_name,
                 "bboxes": bboxes,
-                "landmarks": landmarks,
-                "has_landmarks": has_landmarks,
+                "keypoints": keypoints,
+                "has_keypoints": has_keypoints,
                 "difficulty": events_difficulty.get(event_name),
         }
         if self.name:
-            target["dataset"] = self.name
+            sample["dataset"] = self.name
 
         if self.transform is not None:
-            image, target = self.transform(image, target)
+            to_transform = {key: sample[key] for key in ["image", "bboxes", "keypoints", "has_keypoints"]}
+            if isinstance(self.transform, list):
+                for t in self.transform:
+                    to_transform = t(**to_transform)
+            else:
+                to_transform = self.transform(**to_transform)
+            sample.update(to_transform)
 
-        return image, target
+        return sample

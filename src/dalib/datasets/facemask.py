@@ -3,7 +3,7 @@ from torch.utils import data
 
 import numpy as np
 
-from PIL import Image
+import albumentations as A
 
 import xml.etree.ElementTree as ET
 import os
@@ -23,10 +23,17 @@ class FaceMaskDataset(data.Dataset):
         ------maksssksksss0.png
         ------...
 
+    A sample of this dataset has a structure {
+        "image": Numpy array of shape :math:`(H, W, 3)`,
+        "bboxes": Numpy array of shape :math:`(N, 4)` (XYXY format),
+        "with_mask": Numpy array of shape :math:`(N,)`,
+        ...
+    }
+
     Args:
         root: path to root folder of the dataset
-        split: "train" or "val"
-        transform: transformations callback
+        split: "train", "val" or "test"
+        transform: transformation or list of transformations.
         stretch_bboxes: whether to stretch bboxes for more consistency with WIDERFACE labels
     """
     def __init__(self, root, split="train", transform=None, stretch_bboxes=True):
@@ -68,20 +75,27 @@ class FaceMaskDataset(data.Dataset):
         return len(self.annotations)
 
     def __getitem__(self, idx):
-        target = deepcopy(self.annotations[idx])
+        sample = deepcopy(self.annotations[idx])
 
-        image = Image.open(os.path.join(self.root, "images", target["filename"])).convert("RGB")
+        image = A.read_rgb_image(os.path.join(self.root, "images", sample["filename"]))
+        sample["image"] = image
 
         if self.stretch_bboxes:
-            bboxes = target["bboxes"]
+            bboxes = sample["bboxes"]
             heights = bboxes[...,3] - bboxes[...,1]
             bboxes[...,1] = bboxes[...,3] - 1.2*heights
-            target["bboxes"] = bboxes
+            sample["bboxes"] = bboxes
 
         if self.name:
-            target["dataset"] = self.name
+            sample["dataset"] = self.name
 
         if self.transform is not None:
-            image, target = self.transform(image, target)
+            to_transform = {key: sample[key] for key in ["image", "bboxes", "is_difficult", "with_mask"]}
+            if isinstance(self.transform, list):
+                for t in self.transform:
+                    to_transform = t(**to_transform)
+            else:
+                to_transform = self.transform(**to_transform)
+            sample.update(to_transform)
 
-        return image, target
+        return sample

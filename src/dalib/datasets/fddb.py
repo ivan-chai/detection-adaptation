@@ -5,8 +5,7 @@ import numpy as np
 
 import os
 
-from PIL import Image
-
+import albumentations as A
 
 def read_annotations(filename):
     annotations = []
@@ -63,10 +62,16 @@ class FDDBDataset(data.Dataset):
         ---images
         ------2002/07/19/big/img130.jpg
 
+    A sample of this dataset has a structure {
+        "image": Numpy array of shape :math:`(H, W, 3)`,
+        "bboxes": Numpy array of shape :math:`(N, 4)` (XYXY format),
+        ...
+    }
+
     Args:
         root: path to root folder of the dataset
-        split: "train" or "val"
-        transform: transformations callback
+        split: "train", "val"
+        transform: transformation or list of transformations.
     """
     def __init__(self, root, split="train", transform=None):
         assert split in ["train", "val"]
@@ -86,17 +91,23 @@ class FDDBDataset(data.Dataset):
         ann = self.annotations[idx]
         image_path = os.path.join(self.root, "images", ann["path"])
 
-        image = Image.open(image_path).convert("RGB")
+        image = A.read_rgb_image(image_path)
 
         ellipses = ann["ellipses"]
         bboxes = list(map(ellipse_to_bbox, ellipses))
 
         bboxes = np.array(bboxes)
-        target = {"bboxes": bboxes}
+        sample = {"image": image, "bboxes": bboxes}
         if self.name:
-            target["dataset"] = self.name
+            sample["dataset"] = self.name
 
         if self.transform is not None:
-            image, target = self.transform(image, target) 
+            to_transform = {key: sample[key] for key in ["image", "bboxes"]}
+            if isinstance(self.transform, list):
+                for t in self.transform:
+                    to_transform = t(**to_transform)
+            else:
+                to_transform = self.transform(**to_transform)
+            sample.update(to_transform)
 
-        return image, target
+        return sample
