@@ -284,8 +284,10 @@ class DetectionDataModule(pl.LightningDataModule):
         sample_weights = self.val_dataset.get_sample_weights()
         sample_indices = list(WeightedRandomSampler(sample_weights, self.config["val_samples"]))
         for idx in tqdm(sample_indices, desc="Preparing validation mini-dataset"):
-            image, target = self.val_dataset[idx]
-            X.append(to_tensor(image))
+            sample = self.val_dataset[idx]
+            image = sample.pop("image")
+            target = sample
+            X.append(image)
             y.append(target)
 
         class ListDataset(Dataset):
