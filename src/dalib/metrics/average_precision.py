@@ -104,8 +104,8 @@ def count_gt_tp_fp(scores, bboxes_pr, bboxes_gt, subsets=None, resolution=100, i
     for subset in subsets:
         _hit_scores = hit_scores[subset]
         _matched_scores = scores[np.isin(best_match, subset)]
-
-        N_tp = (_hit_scores[None,:] >= scores_grid[:,None]).sum(axis=1)
+       
+        N_tp = (_hit_scores[None,:] > scores_grid[:,None]).sum(axis=1)
         N_fp = misses_table + (_matched_scores[None,:] >= scores_grid[:,None]).sum(axis=1) - N_tp
         N_gt = len(subset)*np.ones(resolution).astype(np.int)
 
@@ -127,11 +127,11 @@ def calculate_PR(gt_tp_fp_table):
     Returns:
         Numpy array of precision and recall scores of shape :math:`(resolution, 2)`.
     """
-    n_pred = tfp_table[..., 1] + tfp_table[..., 2]
-    precision = tfp_table[..., 1] / np.maximum(1, n_pred)
+    n_pred = gt_tp_fp_table[..., 1] + gt_tp_fp_table[..., 2]
+    precision = gt_tp_fp_table[..., 1] / np.maximum(1, n_pred)
     precision[n_pred == 0] = 1
-    recall = tfp_table[..., 1] / np.maximum(1, tfp_table[..., 0])
-    recall[tfp_table[...,0] == 0] = 1
+    recall = gt_tp_fp_table[..., 1] / np.maximum(1, gt_tp_fp_table[..., 0])
+    recall[gt_tp_fp_table[...,0] == 0] = 1
 
     for i in range(len(precision) - 1):
         precision[i + 1] = max(precision[i], precision[i+1])

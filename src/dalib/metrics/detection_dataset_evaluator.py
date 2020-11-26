@@ -5,6 +5,10 @@ from torchvision.transforms.functional import to_tensor
 
 from tqdm import tqdm
 
+
+from collections import OrderedDict
+
+from ..config import prepare_config
 from . import AveragePrecisionCalculator
 
 
@@ -35,22 +39,29 @@ def apply_detector(detector, dataset, device="cuda:0"):
                     pred[key] = pred[key].numpy()
         item = target.copy()
         item["scores"] = pred["scores"]
-        item["bboxes_pr"] = pred["bboxes_pr"]
-        item["bboxes_gt"] = pred["bboxes_gt"]
+        item["bboxes_pr"] = pred["bboxes"]
+        item["bboxes_gt"] = target["bboxes"]
         data.append(item)
 
     return data
 
 
 class DetectionDatasetEvaluator:
-    """Utility class for evaluating detection quality over a dataset."""
+    """Utility class for evaluating detection quality over a dataset.
+    
+    Config:
+        dataset: the name of a dataset. Default: "WIDERFACE".
+        min_height: Float, minimal height of a detection target
+            to be evaluated. Default: 10.
+        max_height: Float, maximal height of a detection target
+            to be evaluated. Default: float("inf").
+        resolution: Int, the number of score thresholds used for
+            precision and recall scores evaluation. Default: 100.
+        iou_threshold: Float, the value of IoU threshold used to
+            discriminate between true and false positive
+            detections. Default: 0.5.
 
-    discriminators = {
-        "WIDERFACE": _widerface_discriminator,
-        "FaceMask": _facemask_discriminator,
-        "FDDB": _fddb_discriminator,
-    }
-
+    """
     @staticmethod
     def get_default_config():
         return OrderedDict([
@@ -62,9 +73,14 @@ class DetectionDatasetEvaluator:
         ])
 
     def __init__(self, config=None):
+        discriminators = {
+            "WIDERFACE": self._widerface_discriminator,
+            "FaceMask": self._facemask_discriminator,
+            "FDDB": self._fddb_discriminator,
+        }
         config = prepare_config(self, config)
         config["max_height"] = float(config["max_height"])
-        self.discriminator = lambda item: self.discriminators[config["dataset"]](item, config["min_height"], config["max_height"])
+        self.discriminator = lambda item: discriminators[config["dataset"]](item, config["min_height"], config["max_height"])
         self.config = config
 
     @staticmethod
@@ -120,13 +136,15 @@ class DetectionDatasetEvaluator:
            Numpy array of AP scores with shape :math:`(N_images,)` if per_image is True,
            dictionary of AP scores by subset name otherwise.
         """
-
-        ap = AveragePrecisionCalculator(discriminator, resolution, iou_threshold)
+        ap = AveragePrecisionCalculator(
+                self.discriminator,
+                self.config["resolution"],
+                self.config["iou_threshold"],
+        )
         if per_image:
-            AP_array = np.array([ap([item])["all"] for item in self.data])
+            AP_array = np.array([ap([item])["all"] for item in evaluation_data])
             return AP_array
         else:
-            ap(self.data)
-            self.AP = ap.AP
+            AP = ap(evaluation_data)
             self.precision_recall = ap.precision_recall
-            return self.AP
+            return AP
