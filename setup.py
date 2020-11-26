@@ -18,6 +18,7 @@ setup(
         "Pillow",
         "pytorch-lightning==1.0.3",
         "PyYAML",
-        "scipy"
+        "scipy",
+        "albumentations"
     ]
 )
