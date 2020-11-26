@@ -237,10 +237,10 @@ class RandomCropOnBboxAndResize:
 
         return sample
 
-class DatasetNameToLabel:
+class DatasetNameToDomainLabel:
     def __init__(self, dataset_names):
         self.dataset_names = dataset_names
     def __call__(self, **sample):
         if "dataset" in sample:
-            sample["dataset"] = self.dataset_names.index(sample["dataset"])
+            sample["domain_label"] = self.dataset_names.index(sample["dataset"])
         return sample
