@@ -7,7 +7,7 @@ from torchvision.transforms.functional import to_tensor
 import numpy as np
 
 from ..config import prepare_config
-from .detection_transforms import RandomCropOnBboxAndResize
+from .detection_transforms import RandomCropOnBboxAndResize, DatasetNameToLabel
 from .collection import DetectionDatasetsCollection
 
 from collections import OrderedDict
@@ -212,9 +212,10 @@ class DetectionDataModule(pl.LightningDataModule):
         ])
 
     def _get_transform(self):
-        return [
-            RandomCropOnBboxAndResize(self.config["crop"]),
-        ]
+        transform = [RandomCropOnBboxAndResize(self.config["crop"])]
+        if self.dataset_names:
+            transform.append(DatasetNameToLabel(self.dataset_names))
+        return transform
 
     def _get_augmentations(self):
         default_config = {

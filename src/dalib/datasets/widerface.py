@@ -153,7 +153,7 @@ class WIDERFACEDataset(torch.utils.data.Dataset):
             sample["dataset"] = self.name
 
         if self.transform is not None:
-            to_transform = {key: sample[key] for key in ["image", "bboxes", "keypoints", "has_keypoints"]}
+            to_transform = {key: sample[key] for key in ["image", "bboxes", "keypoints", "has_keypoints", "dataset"]}
             if isinstance(self.transform, list):
                 for t in self.transform:
                     to_transform = t(**to_transform)

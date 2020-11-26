@@ -90,7 +90,7 @@ class FaceMaskDataset(data.Dataset):
             sample["dataset"] = self.name
 
         if self.transform is not None:
-            to_transform = {key: sample[key] for key in ["image", "bboxes", "is_difficult", "with_mask"]}
+            to_transform = {key: sample[key] for key in ["image", "bboxes", "is_difficult", "with_mask", "dataset"]}
             if isinstance(self.transform, list):
                 for t in self.transform:
                     to_transform = t(**to_transform)

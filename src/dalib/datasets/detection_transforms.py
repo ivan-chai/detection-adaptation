@@ -206,7 +206,7 @@ class RandomCropOnBboxAndResize:
         return pivot_point, rescaling_factor
 
 
-    def __call__(self, **kwargs):
+    def __call__(self, **sample):
         """Args:
             target: {
                 "image": PIL.Image,
@@ -218,7 +218,6 @@ class RandomCropOnBboxAndResize:
         Returns:
             Dictonary with cropped image and accordingly transformed bboxes, keypoints and labels.
         """
-        sample = kwargs
         pivot_point, rescaling_factor\
                 = self._choose_pivot_point_and_rescaling_factor(sample["bboxes"], _size(sample["image"]))
 
@@ -236,4 +235,12 @@ class RandomCropOnBboxAndResize:
             sample = crop(sample, crop_area, self.config["in_crop_threshold"])
             sample = resize(sample, target_image_size, self.config["in_crop_threshold"])
 
+        return sample
+
+class DatasetNameToLabel:
+    def __init__(self, dataset_names):
+        self.dataset_names = dataset_names
+    def __call__(self, **sample):
+        if "dataset" in sample:
+            sample["dataset"] = self.dataset_names.index(sample["dataset"])
         return sample
