@@ -3,11 +3,13 @@ from .widerface import WIDERFACEDataset
 from .facemask import FaceMaskDataset
 from .fddb import FDDBDataset
 
-DATASETS = {
-    "widerface": WIDERFACEDataset,
-    "facemask": FaceMaskDataset,
-    "fddb": FDDBDataset,
-}
+from collections import OrderedDict
+
+DATASETS = OrderedDict([
+    ("widerface", WIDERFACEDataset),
+    ("facemask", FaceMaskDataset),
+    ("fddb", FDDBDataset),
+])
 
 
 class DetectionDatasetsCollection:
@@ -28,12 +30,12 @@ class DetectionDatasetsCollection:
 
     @staticmethod
     def get_descriptions():
-        return {
-            name: {
+        return OrderedDict([
+            (name, {
                 "description": dataset.__doc__,
-            }
+            })
             for name, dataset in DATASETS.items()
-        }
+        ])
 
     def __repr__(self):
         repr_str = ""
