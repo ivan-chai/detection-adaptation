@@ -31,6 +31,7 @@ class BaselinePredictor(nn.Module):
             ...
         }
     """
+
     @staticmethod
     def get_default_config():
         return OrderedDict([
@@ -38,6 +39,7 @@ class BaselinePredictor(nn.Module):
             ("predict_landmarks", False),
             ("n_landmarks", 5),
         ])
+
     def __init__(self, config=None):
         super().__init__()
         config = prepare_config(self, config)

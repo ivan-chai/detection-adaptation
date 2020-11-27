@@ -12,6 +12,7 @@ from .building_blocks import FPN
 
 
 class ResnetBackbone(nn.Module):
+
     def __init__(self, resnet, expose_layers=[1,2,3,4]):
         super().__init__()
         self.expose_layers = expose_layers
@@ -44,6 +45,7 @@ class ResnetBackbone(nn.Module):
 
         return exposed
 
+
 class ResnetFPNExtractor(nn.Module):
     """A simple resnet+fpn extractor.
 
@@ -68,6 +70,7 @@ class ResnetFPNExtractor(nn.Module):
         "offsets" determine how upper-leftmost element of embedding tensor projects
         to input image
     """
+
     @staticmethod
     def get_default_config():
         return OrderedDict([

@@ -4,7 +4,9 @@ from torch.nn import functional as F
 
 from collections import OrderedDict
 
+
 class ConvBlock(nn.Module):
+
     def __init__(self, in_channels, out_channels,
                  kernel_size, stride=1, activation=nn.ReLU,
                  zero_bn=False):
@@ -23,7 +25,9 @@ class ConvBlock(nn.Module):
         x = self.act(x)
         return x
 
+
 class Upsample(nn.Module):
+
     def __init__(self, in_channels, out_channels):
         super().__init__()
         self.conv = nn.Conv2d(in_channels, out_channels, kernel_size=1)
@@ -34,10 +38,10 @@ class Upsample(nn.Module):
                 mode="bilinear", align_corners=True)
         return x
 
+
 class FPN(nn.Module):
-    """
-    Channels are in order from highest to lowest stride.
-    """
+    """Channels are in order from highest to lowest stride."""
+
     def __init__(self, in_channels_list, out_channels_list=None):
         super().__init__()
         self.in_channels_list = in_channels_list

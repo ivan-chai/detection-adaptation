@@ -8,6 +8,7 @@ from collections import OrderedDict
 
 from ...config import prepare_config
 
+
 class LocMaxNMSPostprocessor(nn.Module):
     """A score local maxima + nms postprocessor. Keeps predictions that correspond
     to local maxima of scores. Then applies standard nms.
@@ -36,6 +37,7 @@ class LocMaxNMSPostprocessor(nn.Module):
             for i in range(B),
         ]
     """
+
     @staticmethod
     def get_default_config():
         return OrderedDict([
