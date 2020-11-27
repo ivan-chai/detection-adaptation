@@ -49,21 +49,6 @@ class Detector(nn.Module):
         in :attr:`embedding_channels`.
 
     """
-    def __init__(self, config=None):
-        super().__init__()
-        config = prepare_config(self, config)
-
-        self.extractor = EXTRACTORS[config["extractor"]["type"]](config["extractor"]["config"])
-
-        self.extractor.eval()
-        with torch.no_grad():
-            embedding_channels = self.extractor(torch.rand(1,3,129,129))["embedding_t"].shape[1]
-            self.embedding_channels = embedding_channels
-        config["predictor"]["config"]["in_channels"] = embedding_channels
-        self.extractor.train()
-
-        self.predictor = PREDICTORS[config["predictor"]["type"]](config["predictor"]["config"])
-        self.postprocessor = POSTPROCESSORS[config["postprocessor"]["type"]](config["postprocessor"]["config"])
 
     @staticmethod
     def get_default_config():
@@ -81,6 +66,22 @@ class Detector(nn.Module):
                 "config": {},
             }),
         ])
+
+    def __init__(self, config=None):
+        super().__init__()
+        config = prepare_config(self, config)
+
+        self.extractor = EXTRACTORS[config["extractor"]["type"]](config["extractor"]["config"])
+
+        self.extractor.eval()
+        with torch.no_grad():
+            embedding_channels = self.extractor(torch.rand(1,3,129,129))["embedding_t"].shape[1]
+            self.embedding_channels = embedding_channels
+        config["predictor"]["config"]["in_channels"] = embedding_channels
+        self.extractor.train()
+
+        self.predictor = PREDICTORS[config["predictor"]["type"]](config["predictor"]["config"])
+        self.postprocessor = POSTPROCESSORS[config["postprocessor"]["type"]](config["postprocessor"]["config"])
 
     def forward(self, x):
         x = self.extractor(x)

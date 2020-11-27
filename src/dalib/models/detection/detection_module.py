@@ -37,8 +37,9 @@ class DetectionModule(pl.LightningModule):
 
     :attr:`detector` is a Detector pytorch module, and is self-contained.
     :attr:`loss_fn` is the FacesAsPointsLoss instance used for training.
-    :attr:`embedding_channels` gives the number of channels of the embedding tensor.
+    :attr:`detector.embedding_channels` gives the number of channels of the embedding tensor.
     """
+
     @staticmethod
     def get_default_config():
         return OrderedDict([
@@ -57,6 +58,7 @@ class DetectionModule(pl.LightningModule):
             ("grad_clip_percentile", 100),
             ("grad_clip_history_size", 80),
         ])
+
     def __init__(self, config=None):
         super().__init__()
         config = prepare_config(self, config)
@@ -66,11 +68,8 @@ class DetectionModule(pl.LightningModule):
         self.clipper = AutoClip(config["grad_clip_percentile"])
         self.loss_fn = FacesAsPointsLoss(config["loss"])
 
-    def forward(self, x, postprocessing=False, **postprocessor_kwargs):
-        if postprocessing:
-            x = self.detector.predict(x, **postprocessor_kwargs)
-        else:
-            x = self.detector(x)
+    def forward(self, x):
+        x = self.detector(x)
         return x
 
     def training_step(self, batch, batch_idx):

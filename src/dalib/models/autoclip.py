@@ -6,6 +6,10 @@ import numpy as np
 from collections import deque
 
 class AutoClip:
+    """Track grad norm history and clip gradients to given percentile.
+    See arXiv:2007.14469.
+    """
+
     def __init__(self, percentile, history_size=100, min_history_size=10):
         self.history = deque(maxlen=history_size)
         self.percentile = percentile
