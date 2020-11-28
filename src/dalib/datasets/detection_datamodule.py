@@ -24,7 +24,7 @@ class DetectionBatch:
     """Utility class for batching samples from detection datasets.
 
     A batch can be expanded as X, y = batch.
-    
+
     :attr:`X` is a tensor of shape :math:`(B,3,H,W)`.
     :attr:`y` is a list of dictionaries: [
         {
@@ -264,18 +264,31 @@ class DetectionDataModule(pl.LightningDataModule):
             train_ds = ds_collection.get_dataset(name, split="train")
             train_ds.transform = self._get_transform() + [self._get_augmentations()] + [A_pt.ToTensor()]
 
-            val_ds = ds_collection.get_dataset(name, split="val")
-            val_ds.transform = self._get_transform()\
-                + ([self._get_augmentations()] if self.config["apply_aug_to_val"] else [])\
-                + [A_pt.ToTensor()]
+            # val_ds = ds_collection.get_dataset(name, split="val")
+            # val_ds.transform = self._get_transform()\
+            #     + ([self._get_augmentations()] if self.config["apply_aug_to_val"] else [])\
+            #     + [A_pt.ToTensor()]
 
             self.train_dataset.append(train_ds)
-            self.val_dataset.append(val_ds)
+            # self.val_dataset.append(val_ds)
 
         assert len(self.train_dataset) > 0, "No datasets provided."
 
         self.train_dataset = WeightedConcatDataset(self.train_dataset, ds_weights)
-        self.val_dataset = WeightedConcatDataset(self.val_dataset, ds_weights)
+        # self.val_dataset = WeightedConcatDataset(self.val_dataset, ds_weights)
+        if 'facemask' not in self.dataset_names:
+            self.dataset_names.append('facemask')
+        val_ds_names = ['facemask']
+        for name in val_ds_names:
+            val_ds = ds_collection.get_dataset(name, split="val")
+            val_ds.transform = self._get_transform()\
+                + ([self._get_augmentations()] if self.config["apply_aug_to_val"] else [])\
+                + [A_pt.ToTensor()]
+            self.val_dataset.append(val_ds)
+
+
+        self.val_dataset = WeightedConcatDataset(self.val_dataset[-1:], ds_weights[-1:])
+
 
     def _prepare_val_dataloader(self):
         rng_state = torch.random.get_rng_state()
