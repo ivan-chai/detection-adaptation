@@ -42,7 +42,15 @@ def main(args):
     dataset_names = collection.get_descriptions().keys()
 
     detector = Detector(args.config)
-    detector.load_state_dict(torch.load(args.weights))
+    weights = torch.load(args.weights)
+    try:
+        detector.load_state_dict(weights)
+    except:
+        weights = OrderedDict([
+            ('.'.join(key.split('.')[1:]), value) for key, value in weights["state_dict"].items()
+        ])
+        detector.load_state_dict(weights)
+
 
     for name in dataset_names:
         print(f"{name} AP@50:")
