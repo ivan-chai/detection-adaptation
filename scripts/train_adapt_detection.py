@@ -97,7 +97,7 @@ def main(args):
         try:
             pl_module.detector.load_state_dict(weights)
         except:
-            pl_module.load_from_checkpoint(args.weights, strict=False)
+            pl_module.load_state_dict(weights['state_dict'], strict=False)
 
     pl_datamodule = DetectionDataModule(args.data_dir, config["datamodule"])
 
