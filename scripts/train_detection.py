@@ -99,7 +99,7 @@ def main(args):
         try:
             pl_module.detector.load_state_dict(weights)
         except:
-            pl_module.load_state_dict(weights)
+            pl_module.load_state_dict(weights["state_dict"])
 
     pl_datamodule = DetectionDataModule(args.data_dir, config["datamodule"])
 
