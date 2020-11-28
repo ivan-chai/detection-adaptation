@@ -76,5 +76,6 @@ def main(args):
             print(f"\t\t{category}: {value:.4f}")
         print()
 
+
 if __name__ == "__main__":
     main(get_args())

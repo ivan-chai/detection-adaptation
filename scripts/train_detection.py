@@ -13,6 +13,7 @@ from dalib.models import DetectionModule
 from dalib.datasets import DetectionDataModule
 from dalib.config import prepare_config, read_config
 
+
 def get_args():
     parser = argparse.ArgumentParser(
         description="Train face detection model."
@@ -70,6 +71,7 @@ def get_default_config():
         "trainer": {},
     }
 
+
 def main(args):
     config = prepare_config(get_default_config(), args.config_path)
 
@@ -115,6 +117,7 @@ def main(args):
     )
 
     trainer.fit(pl_module, datamodule=pl_datamodule)
+
 
 if __name__=="__main__":
     main(get_args())
