@@ -15,10 +15,7 @@ from dalib.config import prepare_config, read_config
 
 def get_args():
     parser = argparse.ArgumentParser(
-        description="""Train face detection model.
-        Datasets paths can either be passed as arguments
-        or written to environment variables:
-        WIDERFACE_DIR, FDDB_DIR, FACEMASK_DIR"""
+        description="Train face detection model."
     )
     parser.add_argument(
         "-c", "--config-path",
@@ -96,7 +93,7 @@ def main(args):
     pl_module = DetectionModule(module_config)
 
     if args.weights is not None:
-        weights = torch.load(args.detector_weights)
+        weights = torch.load(args.weights)
         try:
             pl_module.detector.load_state_dict(weights)
         except:

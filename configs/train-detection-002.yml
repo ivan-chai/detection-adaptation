@@ -4,9 +4,9 @@ checkpoint_callback:
   verbose: True
 datamodule:
   datasets:
-    - name: WIDERFACE
+    - name: widerface
       weight: 2.0
-    - name: FaceMask
+    - name: facemask
       weight: 1.0
   collate:
     grid_h: 2

@@ -42,12 +42,12 @@ def make_target_scores(scores_t, bboxes, offsets, stride):
     bbox_centers = 0.5*(bboxes[:,:2] + bboxes[:,2:])
     bbox_sides = bboxes[:,2:] - bboxes[:,:2]
 
-    h_coords = off_h + stride*torch.arange(n_h)
-    w_coords = off_w + stride*torch.arange(n_w)
+    h_coords = torch.arange(n_h)
+    w_coords = torch.arange(n_w)
 
     pivots, ind_h, ind_w = _make_pivots_and_indices(bboxes, offsets, stride)
 
-    sigmas = 0.5*bbox_sides
+    sigmas = 0.5*bbox_sides/stride
     sig_h, sig_w = sigmas[:,0], sigmas[:,1]
 
     target_scores_h = (h_coords[None,:] - ind_h[:,None])**2/(2*sig_h[:,None]**2)
@@ -173,7 +173,7 @@ def make_target_keypoints(keypoints_t, bboxes, keypoints, offsets, stride):
     return keypoints, target_keypoints
 
 def pixelwise_focal(scores_t, target_scores_t, a, b):
-    """Pixeslwise focal loss as in arxiv:1904.07850.
+    """Pixeslwise focal loss as in arXiv:1904.07850.
 
     Args:
         scores_t: :math:`(H, W)`.
@@ -190,7 +190,7 @@ def pixelwise_focal(scores_t, target_scores_t, a, b):
 
     mask = (target_scores_t >= 1 - eps)
     scores_t_masked = scores_t[mask]
-    loss += - ((1 - scores_t_masked)**a * torch.log(target_scores_t[mask] + eps)).sum()
+    loss += - ((1 - scores_t_masked + eps)**a * torch.log(scores_t_masked + eps)).sum()
 
     return loss
 
@@ -277,24 +277,28 @@ class FacesAsPointsLoss():
         cls_losses = torch.stack(cls_losses)
 
         delta_losses = []
-        deltas_batch = prediction["deltas_t"].permute(0,2,3,1)
-        for deltas_t, bboxes in zip(deltas_batch, bboxes_batch):
-            deltas, target_deltas = make_target_deltas(deltas_t, bboxes, offsets, stride)
-            target_deltas = target_deltas.to(deltas.device)
-            loss = torch.abs(target_deltas - deltas).sum()
-            loss /= max(1, len(target_deltas))
-            delta_losses.append(loss)
-        delta_losses = torch.stack(delta_losses)
-
         size_losses = []
+        deltas_batch = prediction["deltas_t"].permute(0,2,3,1)
         sizes_batch = prediction["sizes_t"].permute(0,2,3,1)
-        for sizes_t, bboxes in zip(sizes_batch, bboxes_batch):
+        for deltas_t, sizes_t, bboxes in zip(deltas_batch, sizes_batch, bboxes_batch):
+            deltas, target_deltas = make_target_deltas(deltas_t, bboxes, offsets, stride)
             sizes, target_sizes = make_target_sizes(sizes_t, bboxes, offsets, stride)
+            target_deltas = target_deltas.to(deltas.device)
             target_sizes = target_sizes.to(sizes.device)
+
+            delta_loss = torch.abs((target_deltas - deltas)/target_sizes).sum()
+            delta_loss /= max(1, len(target_deltas))
+            size_loss = torch.abs(torch.log(sizes/target_sizes)).sum()
+            size_loss /= max(1, len(target_sizes))
+
+            delta_losses.append(delta_loss)
+            size_losses.append(size_loss)
+        delta_losses = torch.stack(delta_losses)
+        size_losses = torch.stack(size_losses)
+
+        for sizes_t, bboxes in zip(sizes_batch, bboxes_batch):
             loss = torch.abs(torch.log(sizes/target_sizes)).sum()
             loss /= max(1, len(target_sizes))
-            size_losses.append(loss)
-        size_losses = torch.stack(size_losses)
 
         if "keypoints" in prediction:
             keypoints_batch = prediction["keypoints_t"].permute(0,3,4,1,2)
