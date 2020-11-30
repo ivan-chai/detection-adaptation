@@ -16,6 +16,7 @@ from .detector import Detector
 from ...metrics import AveragePrecisionCalculator
 from dalib.models import GradientReversalLayer
 from itertools import chain
+from pytorch_lightning.metrics.functional import accuracy
 
 class DetectionModule(pl.LightningModule):
     """A lightning module wrapper for detection training.
@@ -168,12 +169,12 @@ class DetectionDomainAdaptation(pl.LightningModule):
             ("grad_clip_percentile", 100),
             ("grad_clip_history_size", 80),
             ("domain_adaptation", True),
-            ("adaptation_factor", 0.1),
+            ("adaptation_factor", 1.0),
             ("domain_classifier_loss", "mse_loss"),
             ("domain_classifier_pool_size", 1),
             ("use_only_y_labels_from_source_domain", True),
             ("target_domain_label", 1),
-            ("gan_style_training", True),
+            ("gan_style_training", False),
         ])
 
     def __init__(self, config=None):
@@ -182,16 +183,16 @@ class DetectionDomainAdaptation(pl.LightningModule):
         self.config = config
 
         self.detector = Detector(config["detector"])
-        # self.clipper = AutoClip(config["grad_clip_percentile"])
+        self.clipper = AutoClip(config["grad_clip_percentile"])
         self.loss_fn = FacesAsPointsLoss(config["loss"])
 
         if self.config["domain_adaptation"]:
-            domain_classifier_emb_dim = self.detector.embedding_channels * config["domain_classifier_pool_size"] ** 2
             self.domain_classifier = nn.Sequential(
-                nn.AdaptiveAvgPool2d(config["domain_classifier_pool_size"]),
-                nn.Flatten(),
                 GradientReversalLayer(lambda_=self.config["adaptation_factor"]),
-                nn.Linear(domain_classifier_emb_dim, 1),
+                nn.Conv2d(self.detector.embedding_channels, 512, kernel_size=1, stride=1),
+                nn.BatchNorm2d(512),
+                nn.ReLU(),
+                nn.Conv2d(512, 1, kernel_size=1, stride=1)
             )
             self.domain_classifier_loss = getattr(F, config["domain_classifier_loss"])
 
@@ -206,7 +207,7 @@ class DetectionDomainAdaptation(pl.LightningModule):
     def _configure_single_optimizer(self, parameters):
         config = self.config
         opts = {"SGD": torch.optim.SGD, "Adam": torch.optim.Adam}
-        opt = opts[config["optimizer"]](self.parameters(), lr=4e-3, weight_decay=config["weight_decay"])
+        opt = opts[config["optimizer"]](parameters, lr=4e-3, weight_decay=config["weight_decay"])
         scheduler = torch.optim.lr_scheduler.OneCycleLR(
                 opt,
                 max_lr = config["max_lr"],
@@ -237,37 +238,55 @@ class DetectionDomainAdaptation(pl.LightningModule):
         self.log(f"{mode}_discriminator_loss", discriminator_loss, prog_bar=True)
         return discriminator_loss
 
+    def _freeze_detector(self):
+        self.detector.eval()
+        for param in self.detector.parameters():
+            param.requires_grad = False
+
     def training_step(self, batch, batch_idx, optimizer_idx=None):
         X, y = batch
-        y_pred, domain_logits = self(X)
+        y_pred, domain_logits_img = self(X)
 
         if self.config["domain_adaptation"]:
-            domain_label = torch.from_numpy(np.array([sample["domain_label"] for sample in y])).type_as(domain_logits).long()
+            domain_label = torch.from_numpy(np.array([sample["domain_label"] for sample in y])).type_as(domain_logits_img).long()
+            domain_label_img = torch.ones_like(domain_logits_img, dtype=torch.long)
+            select = domain_label != self.config["target_domain_label"]
+            domain_label_img[select] = 0
+
             if self.config["use_only_y_labels_from_source_domain"]:
-                is_source_domain = domain_label != self.config["target_domain_label"]
+                is_source_domain = select
             else:
                 is_source_domain = None
 
             if optimizer_idx is None:
                 loss = self._compute_output_loss(y_pred, y, is_source_domain) + \
-                    self._compute_discriminator_loss(domain_logits, domain_label)
+                    self._compute_discriminator_loss(domain_logits_img, domain_label_img)
                 self.log("train_loss", loss)
             elif optimizer_idx == 0:
                 loss = self._compute_output_loss(y_pred, y, is_source_domain)
             elif optimizer_idx == 1:
-                loss = self._compute_discriminator_loss(domain_logits, domain_label)
+                loss = self._compute_discriminator_loss(domain_logits_img, domain_label_img)
         else:
             loss = self._compute_output_loss(y_pred, y)
         return loss
 
     def validation_step(self, batch, batch_idx):
         X, y = batch
-        y_pred, domain_logits = self(X)
+        y_pred, domain_logits_img = self(X)
         loss = self.loss_fn(y_pred, y)
         self.log("val_loss", loss)
-        if domain_logits is not None:
-            domain_label = torch.from_numpy(np.array([sample["domain_label"] for sample in y])).type_as(domain_logits).long()
-            self._compute_discriminator_loss(domain_logits, domain_label, mode="val")
+
+        if domain_logits_img is not None:
+            domain_label = torch.from_numpy(np.array([sample["domain_label"] for sample in y])).type_as(domain_logits_img).long()
+            domain_label_img = torch.ones_like(domain_logits_img, dtype=torch.long)
+            select = domain_label != self.config["target_domain_label"]
+            domain_label_img[select] = 0
+
+            self._compute_discriminator_loss(domain_logits_img, domain_label_img, mode="val")
+
+            d_preds = (domain_logits_img > 0.5).long()
+            acc = accuracy(d_preds, domain_label_img)
+            self.log("val_d_acc", acc)
 
         y_pred = self.detector.postprocessor(y_pred, score_threshold=.01)
         return y_pred, y
@@ -299,7 +318,7 @@ class DetectionDomainAdaptation(pl.LightningModule):
             optimizer, scheduler = self._configure_single_optimizer(self.parameters())
             return [optimizer], [scheduler]
 
-    # def on_after_backward(self):
-    #     grad_norm, clipped_grad_norm = self.clipper(self.parameters())
-    #     self.log("grad_norm", grad_norm)
-    #     self.log("clipped_grad_norm", clipped_grad_norm)
+    def on_after_backward(self):
+        grad_norm, clipped_grad_norm = self.clipper(self.parameters())
+        self.log("grad_norm", grad_norm)
+        self.log("clipped_grad_norm", clipped_grad_norm)
