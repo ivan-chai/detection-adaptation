@@ -19,6 +19,7 @@ setup(
         "pytorch-lightning==1.0.3",
         "PyYAML",
         "scipy",
-        "albumentations"
+        "albumentations",
+        "rich"
     ]
 )
