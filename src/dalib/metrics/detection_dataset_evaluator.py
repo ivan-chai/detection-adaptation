@@ -29,9 +29,11 @@ def apply_detector(detector, dataset, device="cuda:0"):
     """
     detector = detector.eval().to(device)
     data = []
-    for image, target\
+    for sample\
             in tqdm(dataset, desc="Generating validation predictions..."):
         with torch.no_grad():
+            image = sample.pop("image")
+            target = sample
             pred, = detector.predict(to_tensor(image)[None,...].to(device),
                     score_threshold=0.01)
             for key in pred.keys():
@@ -65,7 +67,7 @@ class DetectionDatasetEvaluator:
     @staticmethod
     def get_default_config():
         return OrderedDict([
-            ("dataset", "WIDERFACE"),
+            ("dataset", "widerface"),
             ("min_height", 10),
             ("max_height", float("inf")),
             ("resolution", 100),
@@ -74,9 +76,9 @@ class DetectionDatasetEvaluator:
 
     def __init__(self, config=None):
         discriminators = {
-            "WIDERFACE": self._widerface_discriminator,
-            "FaceMask": self._facemask_discriminator,
-            "FDDB": self._fddb_discriminator,
+            "widerface": self._widerface_discriminator,
+            "facemask": self._facemask_discriminator,
+            "fddb": self._fddb_discriminator,
         }
         config = prepare_config(self, config)
         config["max_height"] = float(config["max_height"])
@@ -117,7 +119,6 @@ class DetectionDatasetEvaluator:
         all_subset, = np.where(np.logical_and(heights < max_height, heights >= min_height))
         subsets = {"all": all_subset}
         return do_count, subsets
-
 
     def __call__(self, evaluation_data, per_image=False):
         """Args:

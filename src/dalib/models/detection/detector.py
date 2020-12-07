@@ -70,6 +70,7 @@ class Detector(nn.Module):
     def __init__(self, config=None):
         super().__init__()
         config = prepare_config(self, config)
+        self.config = config
 
         self.extractor = EXTRACTORS[config["extractor"]["type"]](config["extractor"]["config"])
 
