@@ -84,14 +84,6 @@ class Detector(nn.Module):
         self.predictor = PREDICTORS[config["predictor"]["type"]](config["predictor"]["config"])
         self.postprocessor = POSTPROCESSORS[config["postprocessor"]["type"]](config["postprocessor"]["config"])
 
-        def relu_to_leakyrelu(module):
-            for child_name, child in module.named_children():
-                if isinstance(child, nn.ReLU):
-                    setattr(module, child_name, nn.LeakyReLU())
-
-        self.extractor.apply(relu_to_leakyrelu)
-        self.predictor.apply(relu_to_leakyrelu)
-
     def forward(self, x):
         x = self.extractor(x)
         x = self.predictor(x)
