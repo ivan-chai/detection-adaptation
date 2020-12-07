@@ -26,12 +26,12 @@ def get_args():
     parser.add_argument(
         "--checkpoint",
         type=str, default=None,
-        help="Checkpoint to resume training from."
+        help="Checkpoint to resume training from. Can be in .ckpt or .pth format."
     )
     parser.add_argument(
-        "-w", "--weights",
-        type=str, default=None,
-        help="Weights to start training from. In either .pth or .ckpt format."
+        "--no-init-optimizer",
+        action="store_true",
+        help="If set, optimizer state in checkpoint is ignored."
     )
     parser.add_argument(
         "-m", "--model-dir",
@@ -85,12 +85,20 @@ def main(args):
 
     pl_module = DetectionModule(module_config)
 
-    if args.weights is not None:
-        weights = torch.load(args.weights)
-        try:
-            pl_module.detector.load_state_dict(weights)
-        except:
-            pl_module.load_state_dict(weights["state_dict"])
+    if args.checkpoint is not None:
+        checkpoint = torch.load(args.checkpoint)
+        if args.no_init_optimizer or "state_dict" not in checkpoint.keys():
+            try:
+                pl_module.detector.load_state_dict(checkpoint)
+            except:
+                pl_module.load_state_dict(checkpoint["state_dict"])
+            checkpoint_path = None
+        else:
+            checkpoint_path = args.checkpoint
+    else:
+        checkpoint_path = None
+
+
 
     pl_datamodule = DetectionDataModule(args.data_dir, config["datamodule"])
 
@@ -103,7 +111,7 @@ def main(args):
         checkpoint_callback=checkpoint_callback,
         val_check_interval=0.1,
         callbacks=[pl.callbacks.LearningRateMonitor("step")],
-        resume_from_checkpoint=args.checkpoint,
+        resume_from_checkpoint=checkpoint_path,
         **config["trainer"],
     )
 
@@ -126,7 +134,7 @@ def main(args):
     trainer.fit(pl_module, datamodule=pl_datamodule)
 
     detector_config = getattr(pl_module.detector, "config", None)
-    write_config(detector_config, os.path.join(model_dir, "config.yml"))
+    write_config(detector_config, os.path.join(model_dir, "config.yaml"))
     torch.save(pl_module.state_dict(), os.path.join(model_dir, "weights.pth"))
 
 

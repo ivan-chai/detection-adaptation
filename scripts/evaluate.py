@@ -31,7 +31,7 @@ def get_args():
     parser.add_argument(
         "-m", "--model-dir",
         type=str, required=True,
-        help="Path to model directory. Should contain config.yml and weights.pth files."
+        help="Path to model directory. Should contain config.yaml and weights.pth files."
     )
     parser.add_argument(
         "-d", "--data-dir",
@@ -46,7 +46,7 @@ def main(args):
     collection = DetectionDatasetsCollection(args.data_dir)
     dataset_names = collection.get_descriptions().keys()
 
-    detector_config = read_config(os.path.join(args.model_dir, "config.yml"))
+    detector_config = read_config(os.path.join(args.model_dir, "config.yaml"))
     detector_weights = torch.load(os.path.join(args.model_dir, "weights.pth"))
 
     detector = Detector(detector_config)
