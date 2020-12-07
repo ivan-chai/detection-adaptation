@@ -11,7 +11,7 @@ from pytorch_lightning.loggers import TensorBoardLogger
 
 from dalib.models import DetectionModule
 from dalib.datasets import DetectionDataModule
-from dalib.config import prepare_config, read_config
+from dalib.config import prepare_config, read_config, write_config
 
 
 def get_args():
@@ -31,12 +31,13 @@ def get_args():
     parser.add_argument(
         "-w", "--weights",
         type=str, default=None,
-        help="Weights to start training from."
+        help="Weights to start training from. In either .pth or .ckpt format."
     )
     parser.add_argument(
-        "-m", "--model-configs-dir",
+        "-m", "--model-dir",
         type=str, default=None,
-        help="Path to model config directory. If not specified, is deduced from config path."
+        help="""Directory where to save detector configuration and final weights files.
+                If not specified, models/$(experiment_name + "_" + config_name) is used."""
     )
     parser.add_argument(
         "-n", "--name",
@@ -65,7 +66,6 @@ def get_default_config():
     return {
         "checkpoint_callback": {},
         "datamodule": None,
-        "detector_config": None,
         "optimization": None,
         "seed": 0,
         "trainer": {},
@@ -77,20 +77,11 @@ def main(args):
 
     pl.seed_everything(config["seed"])
 
-    if args.model_configs_dir is None:
-        args.model_configs_dir = os.path.dirname(args.config_path)
-
-    if config["detector_config"]:
-        detector_config = read_config(os.path.join(args.model_configs_dir, config["detector_config"]))
-    else:
-        detector_config = None
-
     try:
         module_config = config["optimization"].copy()
     except:
         module_config = {}
-    if detector_config:
-        module_config["detector"] = detector_config
+    module_config["detector"] = config.get("detector")
 
     pl_module = DetectionModule(module_config)
 
@@ -106,17 +97,37 @@ def main(args):
     tb_logger = TensorBoardLogger(args.log_dir, name=args.name)
     checkpoint_callback = ModelCheckpoint(**config["checkpoint_callback"])
     trainer = pl.Trainer(
-            gpus=args.gpus,
-            max_steps=config["optimization"]["total_steps"] - 1,
-            logger=tb_logger,
-            checkpoint_callback=checkpoint_callback,
-            val_check_interval=0.1,
-            callbacks=[pl.callbacks.LearningRateMonitor("step")],
-            resume_from_checkpoint=args.checkpoint,
-            **config["trainer"],
+        gpus=args.gpus,
+        max_steps=config["optimization"]["total_steps"] - 1,
+        logger=tb_logger,
+        checkpoint_callback=checkpoint_callback,
+        val_check_interval=0.1,
+        callbacks=[pl.callbacks.LearningRateMonitor("step")],
+        resume_from_checkpoint=args.checkpoint,
+        **config["trainer"],
     )
 
+    if args.model_dir:
+        model_dir = args.model_dir
+    else:
+        model_dir = args.config_path
+        model_dir = os.path.basename(model_dir)
+        model_dir = model_dir.split(".")
+        model_dir = ".".join(model_dir[:-1]) if len(model_dir) > 1 else model_dir[0]
+        if args.name:
+            model_dir = args.name + "_" + model_dir
+        model_dir = os.path.join(os.getcwd(), "models", model_dir)
+
+    try:
+        os.mkdir(model_dir)
+    except FileExistsError:
+        pass
+
     trainer.fit(pl_module, datamodule=pl_datamodule)
+
+    detector_config = getattr(pl_module.detector, "config", None)
+    write_config(detector_config, os.path.join(model_dir, "config.yml"))
+    torch.save(pl_module.state_dict(), os.path.join(model_dir, "weights.pth"))
 
 
 if __name__=="__main__":

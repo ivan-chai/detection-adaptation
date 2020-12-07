@@ -82,7 +82,7 @@ class DetectionModule(pl.LightningModule):
     def validation_step(self, batch, batch_idx):
         X, y = batch
         y_pred = self.detector(X)
-        loss = self.loss_fn(y_pred, y)
+        loss = self.loss_fn(y_pred, y, normalization="image")
         self.log("val_loss", loss)
         y_pred = self.detector.postprocessor(y_pred, score_threshold=.01)
         return y_pred, y
@@ -122,3 +122,9 @@ class DetectionModule(pl.LightningModule):
         grad_norm, clipped_grad_norm = self.clipper(self.parameters())
         self.log("grad_norm", grad_norm)
         self.log("clipped_grad_norm", clipped_grad_norm)
+
+    def state_dict(self):
+        return self.detector.state_dict()
+
+    def load_state_dict(self, state_dict):
+        self.detector.load_state_dict(state_dict)

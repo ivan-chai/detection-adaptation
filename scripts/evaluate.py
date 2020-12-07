@@ -9,6 +9,7 @@ from rich.console import Console
 from rich.table import Table
 
 import dalib
+from dalib.config import read_config
 from dalib.models import Detector
 from dalib.datasets import DetectionDatasetsCollection
 from dalib.metrics import apply_detector, DetectionDatasetEvaluator
@@ -27,19 +28,11 @@ def get_args():
     parser = argparse.ArgumentParser(
         description="Evaluate a face detection model."
     )
-
     parser.add_argument(
-        "-c", "--config",
-        type=str, default=None,
-        help="Path to detector configuration file."
-    )
-
-    parser.add_argument(
-        "-w", "--weights",
+        "-m", "--model-dir",
         type=str, required=True,
-        help="Path to detector weights file."
+        help="Path to model directory. Should contain config.yml and weights.pth files."
     )
-
     parser.add_argument(
         "-d", "--data-dir",
         type=str, required=True,
@@ -53,16 +46,11 @@ def main(args):
     collection = DetectionDatasetsCollection(args.data_dir)
     dataset_names = collection.get_descriptions().keys()
 
-    detector = Detector(args.config)
-    weights = torch.load(args.weights)
-    try:
-        detector.load_state_dict(weights)
-    except:
-        weights = OrderedDict([
-            ('.'.join(key.split('.')[1:]), value) for key, value in weights["state_dict"].items()\
-                    if key.split('.')[0] == "detector"
-        ])
-        detector.load_state_dict(weights)
+    detector_config = read_config(os.path.join(args.model_dir, "config.yml"))
+    detector_weights = torch.load(os.path.join(args.model_dir, "weights.pth"))
+
+    detector = Detector(detector_config)
+    detector.load_state_dict(detector_weights)
 
     console = Console()
     for name in dataset_names:

@@ -42,17 +42,17 @@ def make_target_scores(scores_t, bboxes, offsets, stride):
     bbox_centers = 0.5*(bboxes[:,:2] + bboxes[:,2:])
     bbox_sides = bboxes[:,2:] - bboxes[:,:2]
 
-    h_coords = torch.arange(n_h)
-    w_coords = torch.arange(n_w)
+    grid_h = torch.arange(n_h)
+    grid_w = torch.arange(n_w)
 
     pivots, ind_h, ind_w = _make_pivots_and_indices(bboxes, offsets, stride)
 
     sigmas = 0.5*bbox_sides/stride
     sig_h, sig_w = sigmas[:,0], sigmas[:,1]
 
-    target_scores_h = (h_coords[None,:] - ind_h[:,None])**2/(2*sig_h[:,None]**2)
+    target_scores_h = (grid_h[None,:] - ind_h[:,None])**2/(2*sig_h[:,None]**2)
     target_scores_h = torch.exp(-target_scores_h)
-    target_scores_w = (w_coords[None,:] - ind_w[:,None])**2/(2*sig_w[:,None]**2)
+    target_scores_w = (grid_w[None,:] - ind_w[:,None])**2/(2*sig_w[:,None]**2)
     target_scores_w = torch.exp(-target_scores_w)
 
 
@@ -202,6 +202,10 @@ class FacesAsPointsLoss():
     Config:
         a: alpha parameter of pixelwise focal loss. Default: 2.
         b: beta parameter of pixelwise focal loss. Default: 4.
+        normalization: "image" or "batch". Whether to count targets for
+            each image individually (and then divide per image loss by
+            this number), or to count targets across the whole batch.
+            Default: "batch".
         weights:
             cls_loss: weight of classification loss. Default: 1.
             delta_loss: weight of bbox center position regression loss. Default: 1.
@@ -236,6 +240,7 @@ class FacesAsPointsLoss():
         return OrderedDict([
             ("a", 2),
             ("b", 4),
+            ("normalization", "batch"),
             ("weights", {
                     "cls_loss": 1.,
                     "delta_loss": 1.,
@@ -247,6 +252,7 @@ class FacesAsPointsLoss():
     def __init__(self, config=None):
         super().__init__()
         config = prepare_config(self, config)
+        assert config["normalization"] in ["image", "batch"]
         for key, value in config.items():
             self.__dict__[key] = value
 
@@ -260,26 +266,33 @@ class FacesAsPointsLoss():
             return tensor
         raise Exception("reduction should be 'mean', 'sum' or 'none'")
 
-    def __call__(self, prediction, target, reduction="mean"):
+    def __call__(self, prediction, target, reduction="mean", normalization=None):
         offsets = prediction["offsets"]
         stride = prediction["stride"]
+        normalization = self.normalization if normalization is None else normalization
 
         bboxes_batch = [t["bboxes"] for t in target]
 
         cls_losses = []
         scores_batch = prediction["scores_t"]
+        norm_weights = []
         for scores_t, bboxes in zip(scores_batch, bboxes_batch):
             scores_t, target_scores_t = make_target_scores(scores_t, bboxes, offsets, stride)
             target_scores_t = target_scores_t.to(scores_t.device)
             loss = pixelwise_focal(scores_t, target_scores_t, self.a, self.b)
-            loss /= max(1, len(bboxes))
             cls_losses.append(loss)
+            norm_weights.append(max(1, len(bboxes)))
         cls_losses = torch.stack(cls_losses)
+        norm_weights = torch.tensor(norm_weights).to(cls_losses.device).type(cls_losses.type())
+        if normalization=="batch":
+            norm_weights = norm_weights.mean()*torch.ones_like(norm_weights)
+        cls_losses /= norm_weights
 
         delta_losses = []
         size_losses = []
         deltas_batch = prediction["deltas_t"].permute(0,2,3,1)
         sizes_batch = prediction["sizes_t"].permute(0,2,3,1)
+        norm_weights = []
         for deltas_t, sizes_t, bboxes in zip(deltas_batch, sizes_batch, bboxes_batch):
             deltas, target_deltas = make_target_deltas(deltas_t, bboxes, offsets, stride)
             sizes, target_sizes = make_target_sizes(sizes_t, bboxes, offsets, stride)
@@ -287,22 +300,23 @@ class FacesAsPointsLoss():
             target_sizes = target_sizes.to(sizes.device)
 
             delta_loss = torch.abs((target_deltas - deltas)/target_sizes).sum()
-            delta_loss /= max(1, len(target_deltas))
             size_loss = torch.abs(torch.log(sizes/target_sizes)).sum()
-            size_loss /= max(1, len(target_sizes))
 
             delta_losses.append(delta_loss)
             size_losses.append(size_loss)
+            norm_weights.append(max(1, len(bboxes)))
         delta_losses = torch.stack(delta_losses)
         size_losses = torch.stack(size_losses)
-
-        for sizes_t, bboxes in zip(sizes_batch, bboxes_batch):
-            loss = torch.abs(torch.log(sizes/target_sizes)).sum()
-            loss /= max(1, len(target_sizes))
+        norm_weights = torch.tensor(norm_weights).to(delta_losses.device).type(delta_losses.type())
+        if normalization=="batch":
+            norm_weights = norm_weights.mean()*torch.ones_like(norm_weights)
+        delta_losses /= norm_weights
+        size_losses /= norm_weights
 
         if "keypoints" in prediction:
             keypoints_batch = prediction["keypoints_t"].permute(0,3,4,1,2)
             target_keypoints_batch, target_has_keypoints_batch = [], []
+            norm_weights = []
             for t in target:
                 if "keypoints" not in t.keys():
                     target_keypoints_batch.append(torch.empty((0,keypoints_batch.shape[-2],2)))
@@ -326,9 +340,13 @@ class FacesAsPointsLoss():
                     scale = scale.sum(dim=-1).max(dim=-1).values.max(dim=-1).values
                     scale = torch.sqrt(scale)
                     loss = (torch.abs(keypoints - target_keypoints)/scale[:,None,None]).sum()
-                    loss /= max(1, len(keypoints))
                 keypts_losses.append(loss)
+                norm_weights.append(max(1, len(keypoints)))
             keypts_losses = torch.stack(keypts_losses)
+            norm_weights = torch.tensor(norm_weights).to(keypts_losses.device).to(keypts_losses.type())
+            if normalization=="batch":
+                norm_weights = norm_weights.mean()*torch.ones_like(norm_weights)
+            keypts_losses /= norm_weights
 
         loss_dict = {
             "cls_loss": cls_losses,
