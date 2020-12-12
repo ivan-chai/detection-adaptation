@@ -106,7 +106,6 @@ def main(args):
     checkpoint_callback = ModelCheckpoint(**config["checkpoint_callback"])
     trainer = pl.Trainer(
         gpus=args.gpus,
-        max_steps=config["optimization"]["total_steps"] - 1,
         logger=tb_logger,
         checkpoint_callback=checkpoint_callback,
         val_check_interval=0.1,

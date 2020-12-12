@@ -8,18 +8,24 @@ from collections import OrderedDict
 
 from ...config import prepare_config
 
-from .building_blocks import FPN
+from ..building_blocks import FPN
+
+
+ACTIVATIONS = {
+    "relu": nn.ReLU,
+    "leaky_relu": nn.LeakyReLU
+}
 
 
 class ResnetBackbone(nn.Module):
 
-    def __init__(self, resnet, expose_layers=[1,2,3,4]):
+    def __init__(self, resnet, expose_layers=[1,2,3,4], activation=nn.ReLU):
         super().__init__()
         self.expose_layers = expose_layers
         self.strides = [2*2**i for i in expose_layers]
         self.conv1 = resnet.conv1
         self.bn1 = resnet.bn1
-        self.relu = resnet.relu
+        self.act = resnet.relu
         self.maxpool = resnet.maxpool
 
         self.layer1 = resnet.layer1
@@ -29,10 +35,16 @@ class ResnetBackbone(nn.Module):
 
         self.max_stride = 32
 
+        def relu_to_act(module):
+            for name, child in module.named_children():
+                if isinstance(child, nn.ReLU):
+                    setattr(module, name, activation())
+        self.apply(relu_to_act)
+
     def forward(self, x):
         x = self.conv1(x)
         x = self.bn1(x)
-        x = self.relu(x)
+        x = self.act(x)
         x = self.maxpool(x)
 
         exposed = []
@@ -52,9 +64,13 @@ class ResnetFPNExtractor(nn.Module):
     Config:
         depth: the depth of the resnet, should be in [18, 34, 50, 101]. Default: 18
         backbone_layers: set of resnet layers to expose (from 1 to 4). Default: {1,2,3,4}
+        backbone_activation: type of activation function, should be "relu" or "leaky_relu".
+            Default: "relu".
         fpn_out_channels: list of fpn output channels (length should be equal to
             len(backbone_layers). If element is None, it becomes equal to number of
             channels of the corresponding resnet layer. Default: [None,None,None,128]
+        fpn_activation: type of activation function, should be "relu" or "leaky_relu".
+            Default: "relu".
         pad_inputs: whether to pad inputs so that strided layers elements are distributed
             evenly (dimension % max_stride == 1). Default: True
 
@@ -76,7 +92,9 @@ class ResnetFPNExtractor(nn.Module):
         return OrderedDict([
             ("depth", 18),
             ("backbone_layers", {1,2,3,4}),
+            ("backbone_activation", "relu"),
             ("fpn_out_channels", [None,None,None,128]),
+            ("fpn_activation", "relu"),
             ("pad_inputs", True),
         ])
 
@@ -84,8 +102,11 @@ class ResnetFPNExtractor(nn.Module):
         super().__init__()
         config = prepare_config(self, config)
         resnets = {18: resnet18, 34: resnet34, 50: resnet50, 101: resnet101}
-        self.backbone = ResnetBackbone(resnets[config["depth"]](pretrained=True),
-                config["backbone_layers"])
+        self.backbone = ResnetBackbone(
+            resnets[config["depth"]](pretrained=True),
+            config["backbone_layers"],
+            activation=ACTIVATIONS[config["backbone_activation"]]     
+        )
 
         self.backbone.eval()
         with torch.no_grad():
@@ -93,7 +114,11 @@ class ResnetFPNExtractor(nn.Module):
         fpn_in_channels = [_x.shape[1] for _x in x]
         self.backbone.train()
 
-        self.fpn = FPN(fpn_in_channels, config["fpn_out_channels"])
+        self.fpn = FPN(
+            fpn_in_channels,
+            config["fpn_out_channels"],
+            activation=ACTIVATIONS[config["fpn_activation"]]
+        )
 
         self.pad_inputs = config["pad_inputs"]
         self.pad_lambda = lambda side:\

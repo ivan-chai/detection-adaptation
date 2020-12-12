@@ -1,0 +1,21 @@
+checkpoint_callback:
+  mode: min
+  monitor: val_loss
+  verbose: True
+datamodule:
+  collate:
+    grid_h: 2
+    grid_w: 2
+optimization:
+  optimizer: Adam
+  optimizer_config:
+    lr: 0.000001
+  scheduler: StepLR
+  scheduler_config:
+    step_size: 4000
+  grad_clip_percentile: 80
+  grad_clip_history_size: 100
+trainer:
+  precision: 16
+  log_every_n_steps: 1
+  max_steps: 5000

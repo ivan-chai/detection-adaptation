@@ -22,16 +22,10 @@ class DetectionModule(pl.LightningModule):
     Config:
         loss: config of FacesAsPointsLoss. Default: None.
         detector: config of Detector. Default: None.
-        optimizer: "SGD" or "Adam". Default: "SGD".
-        start_lr: if None, is equal to max_lr. Default: 1e-6.
-        max_lr: Default: 4e-3.
-        end_lr: if None, is equal to max_lr. Default: 1e-6.
-        total_steps: Default: 25000.
-        anneal_strategy: "linear" or "cos". Default: "linear".
-        pct_start: fraction of training spent increasing lr. Default: 0.5.
-        base_momentum: Default: 0.85.
-        max_momentum: Default: 0.95.
-        weight_decay: Default: 1e-6.
+        optimizer: optimizer type. Default: "SGD".
+        optimizer_config: kwargs to pass to optimizer. Default: see code.
+        scheduler: scheduler type. Default: "OneCycleLR".
+        scheduler_config: kwargs to pass to scheduler. Default: see code.
         grad_clip_percentile: a percentile for clipping grad norm. Default: 80 (no clipping).
         grad_clip_history_size: size of history for tracking grad norm statistics. Default: 100.
 
@@ -46,15 +40,20 @@ class DetectionModule(pl.LightningModule):
             ("loss", None),
             ("detector", None),
             ("optimizer", "SGD"),
-            ("start_lr", 1e-6),
-            ("max_lr", 4e-3),
-            ("end_lr", 1e-6),
-            ("total_steps", 25000),
-            ("anneal_strategy", "linear"),
-            ("pct_start", 0.5),
-            ("base_momentum", 0.85),
-            ("max_momentum", 0.95),
-            ("weight_decay", 1e-6),
+            ("optimizer_config", {
+                "weight_decay", 1e-6
+            }),
+            ("scheduler", "OneCycleLR"),
+            ("scheduler_config", {
+                ("div_factor", 4e+3),
+                ("max_lr", 4e-3),
+                ("final_div_factor", 4e+3),
+                ("total_steps", 25000),
+                ("anneal_strategy", "linear"),
+                ("pct_start", 0.5),
+                ("base_momentum", 0.85),
+                ("max_momentum", 0.95),
+            }),
             ("grad_clip_percentile", 100),
             ("grad_clip_history_size", 80),
         ])
@@ -103,19 +102,12 @@ class DetectionModule(pl.LightningModule):
 
     def configure_optimizers(self):
         config = self.config
-        opts = {"SGD": torch.optim.SGD, "Adam": torch.optim.Adam}
-        opt = opts[config["optimizer"]](self.parameters(), lr=4e-3, weight_decay=config["weight_decay"])
-        scheduler = torch.optim.lr_scheduler.OneCycleLR(
-                opt,
-                max_lr = config["max_lr"],
-                total_steps = config["total_steps"],
-                pct_start = config["pct_start"],
-                anneal_strategy = config["anneal_strategy"],
-                base_momentum = config["base_momentum"],
-                max_momentum = config["max_momentum"],
-                div_factor = 1 if config["start_lr"] is None else config["max_lr"]/config["start_lr"],
-                final_div_factor = 1 if config["end_lr"] is None else config["max_lr"]/config["end_lr"]
+        opt = getattr(torch.optim, config["optimizer"])(
+            self.parameters(),
+            **config["optimizer_config"]
         )
+
+        scheduler = getattr(torch.optim.lr_scheduler, config["scheduler"])(opt, **config["scheduler_config"])
         return [opt], [{"scheduler": scheduler, "interval": "step", "frequency": 1}]
 
     def on_after_backward(self):

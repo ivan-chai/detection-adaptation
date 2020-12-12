@@ -6,7 +6,13 @@ from collections import OrderedDict
 
 from ...config import prepare_config
 
-from .building_blocks import ConvBlock
+from ..building_blocks import ConvBlock
+
+
+ACTIVATIONS = {
+    "relu": nn.ReLU,
+    "leaky_relu": nn.LeakyReLU
+}
 
 class BaselinePredictor(nn.Module):
     """A simple prediction head. Uses 3 consecutive 3x3 conv blocks and one
@@ -14,6 +20,8 @@ class BaselinePredictor(nn.Module):
 
     Config:
         in_channels: number if input channels. Default: 128
+        activation: type of activation funciton, should be "relu" or "leaky_relu".
+            Default: "relu".
         predict_landmarks: whether to predict landmarks. Default: False
         n_landmarks: number of landmarks to predict. Default: 5
 
@@ -36,6 +44,7 @@ class BaselinePredictor(nn.Module):
     def get_default_config():
         return OrderedDict([
             ("in_channels", 128),
+            ("activation", "relu"),
             ("predict_landmarks", False),
             ("n_landmarks", 5),
         ])
