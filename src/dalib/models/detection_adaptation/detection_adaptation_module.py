@@ -106,7 +106,7 @@ class DetectionAdaptationModule(pl.LightningModule):
         ](config["discriminator"]["config"])
         self.discriminator_clipper = AutoClip(config["grad_clip_percentile"])
 
-        self.grad_reversal_layer = GradReversalLayer(config["adaptation_factor"])
+        self.grad_reversal_layer = GradientReversalLayer(1.0)
 
         self.detector.apply(
             lambda x: self._set_batchnorm_momentum(x, config["detector_batchnorm_momentum"])
@@ -140,7 +140,7 @@ class DetectionAdaptationModule(pl.LightningModule):
             src_domain_logits = self.discriminator(embedding_t[is_src_domain]).squeeze(1)
             tar_domain_logits = self.discriminator(embedding_t[is_tar_domain]).squeeze(1)
 
-            domain_logits = torch.ones(len(y_true)).to(src_domain_logits.device)
+            domain_logits = torch.ones(len(y_true), *src_domain_logits.shape[1:]).to(src_domain_logits.device)
             domain_logits[is_src_domain] = src_domain_logits
             domain_logits[is_tar_domain] = tar_domain_logits
         else:
@@ -156,8 +156,8 @@ class DetectionAdaptationModule(pl.LightningModule):
         y_pred["domain_logits"] = domain_logits
         return y_pred
 
-    def training_step(self, batch, batch_idx, *args, **kwargs):
-        self.detection.train()
+    def training_step(self, batch, batch_idx, optimizer_idx):
+        self.detector.train()
         self.discriminator.train()
 
         X, y_true = batch
@@ -177,14 +177,16 @@ class DetectionAdaptationModule(pl.LightningModule):
             adaptation_loss = adaptation_loss.mean()
             self.log("detector_train_loss", detection_loss)
             self.log("adaptation_train_loss", adaptation_loss)
-            loss = detection_loss + adaptation_loss
+            loss = detection_loss + adaptation_loss*self.config["adaptation_factor"]
             optimizer, _ = self.optimizers()
             clip_grad = self._clip_detector_grad
 
         discriminator_accuracy = self._domain_accuracy(y_pred, y_true)
         self.log("discriminator_train_accuracy", discriminator_accuracy)
 
-        self.manual_bachward(loss, optimizer)
+        
+        optimizer.zero_grad()
+        self.manual_backward(loss, optimizer)
         clip_grad()
         optimizer.step()
 
@@ -228,18 +230,19 @@ class DetectionAdaptationModule(pl.LightningModule):
 
         src_domain_label = int(self.config["source_domain_label"])
         balance = self.config["domain_balance"]
-        balancing_weights = torch.ones_like(domain_labels)
+        balancing_weights = torch.ones_like(domain_labels).float()
         balancing_weights[domain_labels == src_domain_label] = balance
-        balancing_weights /= (1 + balance)
+        balancing_weights /= (1. + balance)
 
         domain_labels = domain_labels[:, None, None]
 
         if self.config["discriminator_loss"] == "mse":
-            loss = F.mse_loss(domain_logits, domain_labels)
+            loss = F.mse_loss(domain_logits, domain_labels.float(), reduction="none")
         if self.config["discriminator_loss"] == "cross_entropy":
-            loss = - domain_labels*F.logsigmoid(domain_logits)
+            loss = - domain_labels*F.logsigmoid(domain_logits)\
+                   - (1 - domain_labels)*F.logsigmoid(-domain_logits)
 
-        loss = loss.flatten(1, -1).mean()
+        loss = loss.flatten(1, -1).mean(dim=-1)
         loss *= balancing_weights
 
         return loss
@@ -271,17 +274,17 @@ class DetectionAdaptationModule(pl.LightningModule):
 
     def _detection_and_adaptation_losses(self, y_pred, y_true):
         detection_loss = self.detection_loss_fn(
-            self._keep_source(y_pred, y_true)
+            *self._keep_source(y_pred, y_true)
         )
 
         is_flipping = self.config["minmax_mode"] == "labels_flip"
         context = flip_labels if is_flipping else do_nothing
-        with context(y_true):
+        with context(y_true, self.config):
             adaptation_loss = self._domain_loss(y_pred, y_true)
 
         return detection_loss, adaptation_loss
 
-    def validation_step(self, batch, *args, **kwargs):
+    def validation_step(self, batch, batch_idx):
         self.detector.eval()
         if self.config["split_discriminator_batch"]:
             self.discriminator.train()
@@ -289,9 +292,9 @@ class DetectionAdaptationModule(pl.LightningModule):
             self.discriminator.eval()
 
         X, y_true = batch
-        y_pred = self(X)
+        y_pred = self(X, y_true)
 
-        detector_loss = self.detector_loss_fn(y_pred, y_true)
+        detector_loss = self.detection_loss_fn(y_pred, y_true)
         self.log("detector_val_loss", detector_loss)
 
         discriminator_loss = self._discriminator_loss(y_pred, y_true)
