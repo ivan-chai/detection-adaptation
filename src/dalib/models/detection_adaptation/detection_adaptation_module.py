@@ -64,6 +64,8 @@ class DetectionAdaptationModule(pl.LightningModule):
             ("grad_clip_history_size", 100),
             ("source_domain_label", 0),
             ("target_domain_loss_weight", 1.),
+            ("freeze_predictor", False),
+            ("detector_batchnorm_momentum", 0.1),
         ])
 
     def __init__(self, config=None):
@@ -78,7 +80,26 @@ class DetectionAdaptationModule(pl.LightningModule):
         self.discriminator = DISCRIMINATORS[config["discriminator"]["type"]](config["discriminator"]["config"])
         self.discriminator_clipper = AutoClip(config["grad_clip_percentile"])
 
+        self.detector.apply(
+            lambda x: self._set_batchnorm_momentum(x, config["detector_batchnorm_momentum"])
+        )
+
+
+    def _freeze_predictor(self):
+        self.detector.predictor.eval()
+        for p in self.detector.predictor.parameters():
+            p.requires_grad = False
+
+    @staticmethod
+    def _set_batchnorm_momentum(module, momentum):
+        for name, child in module.named_children():
+            if isinstance(child, nn.BatchNorm2d):
+                child.momentum = momentum
+
     def forward(self, x, domain_labels=None, step=None):
+        if self.config["freeze_predictor"]:
+            self._freeze_predictor()
+
         detector_context = torch.no_grad if step=="discriminator" else nullcontext
         #discriminator_context = torch.no_grad if step=="detector" else nullcontext 
         discriminator_context = nullcontext
@@ -121,6 +142,7 @@ class DetectionAdaptationModule(pl.LightningModule):
 
         if flip:
             domain_labels = 1 - domain_labels
+
         domain_labels = domain_labels.to(domain_logits.device)
         if domain_logits.ndim > 1:
             domain_labels = domain_labels[:,None,None].expand(domain_logits.shape)
@@ -174,6 +196,9 @@ class DetectionAdaptationModule(pl.LightningModule):
             self.log("discriminator_clipped_grad_norm", clipped_grad_norm)
 
     def training_step(self, batch, batch_idx, optimizer_idx):
+        self.detector.train()
+        self.discriminator.train()
+
         X, y_true = batch
         domain_labels = torch.tensor([_y["domain_label"] for _y in y_true])\
                 if self.config["split_discriminator_batch"] else None
@@ -199,9 +224,15 @@ class DetectionAdaptationModule(pl.LightningModule):
         self._on_after_backward(optimizer_idx)
         opt.step()
 
+        self.detector.zero_grad()
+        self.discriminator.zero_grad()
+
         return loss
 
     def validation_step(self, batch, batch_idx):
+        self.detector.eval()
+        self.discriminator.eval()
+
         X, y_true = batch
         y_pred = self(X)
 

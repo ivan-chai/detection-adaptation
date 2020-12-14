@@ -56,6 +56,7 @@ class DetectionModule(pl.LightningModule):
             }),
             ("grad_clip_percentile", 100),
             ("grad_clip_history_size", 80),
+            ("batchnorm_momentum", 0.1),
         ])
 
     def __init__(self, config=None):
@@ -67,9 +68,16 @@ class DetectionModule(pl.LightningModule):
         self.clipper = AutoClip(config["grad_clip_percentile"])
         self.loss_fn = FacesAsPointsLoss(config["loss"])
 
-    def forward(self, x):
-        x = self.detector(x)
-        return x
+        self.detector.apply(
+            lambda x: self._set_batchnorm_momentum(x, config["batchnorm_momentum"])
+        )
+
+
+    @staticmethod
+    def _set_batchnorm_momentum(module, momentum):
+        for name, child in module.named_children():
+            if isinstance(child, nn.BatchNorm2d):
+                child.momentum = momentum
 
     def training_step(self, batch, batch_idx):
         X, y = batch
