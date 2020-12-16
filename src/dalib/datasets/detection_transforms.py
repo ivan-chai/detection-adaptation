@@ -141,6 +141,89 @@ def resize(sample, target_image_size, bbox_diag_threshold):
     return transformed_sample
 
 
+def cut_bbox_bottom(sample, ratio, fill_value):
+    """Resize an image to given dimensions and transform the target accordingly.
+
+    Args:
+        sample: {
+            "image": PIL.Image,
+            "bboxes": Numpy array :math:`(N, 4)` (XYXY format),
+            "keypoints": Numpy array :math:`(N, n, 2)`, (optional)
+            ...
+        }
+        target_image_size: list or array of two int, the new image size.
+        bbox_diag_threshold: Float, transformed detection targets are dropped
+            if their diagonal is smaller than this number.
+
+    Returns:
+        A tuple of image crop (PIL.Image) and transformed targets.
+    """
+    transformed_sample = {}
+
+    image = sample["image"]
+    bboxes = sample["bboxes"]
+
+    holes = [
+        (x1, y1 + int((y2 - y1) * (1 - ratio)), x2, y2) if y2 > y1
+        else (x1, y1, x2, y2 + int((y1 - y2) * (1 - ratio)))
+        for x1, y1, x2, y2 in bboxes.astype(int)
+    ]
+
+    image = A.functional.cutout(image, holes, fill_value)
+
+    transformed_sample["image"] = image
+    transformed_sample["bboxes"] = bboxes
+
+    for key in sample.keys():
+        if key in ["image", "bboxes", "keypoints"]:
+            continue
+        try:
+            transformed_sample[key] = np.array(sample[key])
+        except:
+            transformed_sample[key] = deepcopy(sample[key])
+
+    return transformed_sample
+
+
+class CutBboxBottom:
+    """Cut bottom part of bbox and fill with color.
+
+    Config:
+        p: Float, the probability of augmentation.
+        ratio: Float, ratio of cutted part height to height of bbox.
+        fill_value: Int, fill value for bbox cutted part.
+    """
+    @staticmethod
+    def get_default_config():
+        return OrderedDict([
+            ("p", 0.5),
+            ("ratio", 0.5),
+            ("fill_value", 220)
+        ])
+
+    def __init__(self, config=None):
+        config = prepare_config(self, config)
+        self.config = config
+
+    def __call__(self, **sample):
+        """Args:
+            sample: {
+                "image": PIL.Image,
+                "bboxes": Numpy array :math:`(N, 4)` (XYXY format),
+                "keypoints": Numpy array :math:`(N, n, 2)`, (optional)
+                ...
+            }
+
+        Returns:
+            Dictonary with cropped image and accordingly transformed bboxes, keypoints and labels.
+        """
+
+        if torch.rand(1).item() < self.config["p"]:
+            sample = cut_bbox_bottom(sample, self.config["ratio"], self.config["fill_value"])
+
+        return sample
+
+
 class RandomCropOnBboxAndResize:
     """Generate a crop of given size and random scale, with accordingly transformed target.
     The crop area is chosen randomly around a randomly chosen detection target (pivot). The rescaling
@@ -180,7 +263,7 @@ class RandomCropOnBboxAndResize:
 
     @staticmethod
     def _randint(low, high):
-        return torch.randint(low, high, (1,)).item() 
+        return torch.randint(low, high, (1,)).item()
 
     def _choose_pivot_point_and_rescaling_factor(self, bboxes, image_size):
         p_random_crop = self.config["p_random_crop"]
@@ -222,7 +305,7 @@ class RandomCropOnBboxAndResize:
                 = self._choose_pivot_point_and_rescaling_factor(sample["bboxes"], _size(sample["image"]))
 
         target_image_size = np.array(self.config["target_image_size"])
-        crop_area = target_image_size/rescaling_factor 
+        crop_area = target_image_size/rescaling_factor
         crop_area = np.concatenate([pivot_point - crop_area/2, pivot_point + crop_area/2])
 
         if rescaling_factor < 1:
