@@ -7,6 +7,7 @@ from torchvision.ops import nms
 from collections import OrderedDict
 
 from ...config import prepare_config
+from ..box_utils import BoxConverter
 
 
 class LocMaxNMSPostprocessor(nn.Module):
@@ -49,14 +50,17 @@ class LocMaxNMSPostprocessor(nn.Module):
     def __init__(self, config=None):
         super().__init__()
         config = prepare_config(self, config)
-        for k, v in config.items():
-            self.__dict__[k] = v
+        for key, value in config.items():
+            self.__dict__[key] = value
 
     def forward(self, x, score_threshold=None, nms_iou_threshold=None):
         offsets = x["offsets"]
         stride = x["stride"]
-        score_threshold = self.score_threshold if score_threshold is None else score_threshold
-        nms_iou_threshold = self.nms_iou_threshold if nms_iou_threshold is None else nms_iou_threshold
+        box_converter = BoxConverter(offsets, stride)
+        score_threshold = self.score_threshold\
+            if score_threshold is None else score_threshold
+        nms_iou_threshold = self.nms_iou_threshold\
+            if nms_iou_threshold is None else nms_iou_threshold
 
         scores = x["scores_t"]
         deltas = x["deltas_t"]
@@ -69,8 +73,9 @@ class LocMaxNMSPostprocessor(nn.Module):
             )
         )
 
-        batch_idx, results_per_batch_idx = torch.unique(id_b.cpu(),
-                                    sorted=True, return_counts=True)
+        batch_idx, results_per_batch_idx = torch.unique(
+            id_b.cpu(), sorted=True, return_counts=True
+        )
         batch_size = scores.shape[0]
         splits = torch.zeros(batch_size).long()
         splits[batch_idx] = results_per_batch_idx
@@ -80,16 +85,11 @@ class LocMaxNMSPostprocessor(nn.Module):
         deltas = deltas[id_b, :, id_h, id_w]
         sizes = sizes[id_b, :, id_h, id_w]
 
-        y_coord = id_h*stride + offsets[0]
-        x_coord = id_w*stride + offsets[1]
-
-        pivots = torch.stack([x_coord, y_coord], dim=1)
-
-        centers = pivots + deltas
+        pivots = box_converter.make_pivots_from_indices(id_h, id_w)
 
         scores = scores.float().cpu()
+        bboxes = box_converter.make_moxes(deltas, sizes).float().cpu()
         scores = torch.split(scores, splits)
-        bboxes = torch.cat([centers - sizes/2, centers + sizes/2], dim=1).float().cpu()
         bboxes = torch.split(bboxes, splits)
 
         keep = [nms(_bboxes, _scores, nms_iou_threshold)\
@@ -101,11 +101,10 @@ class LocMaxNMSPostprocessor(nn.Module):
         if not "landmarks_t" in x.keys():
             result = [{"bboxes": _bboxes, "scores": _scores}\
                     for _bboxes, _scores in zip(bboxes, scores)]
-            return result
         else:
             landmarks = x["landmarks"]
             landmarks = landmarks[id_b, ..., id_h, id_w]
-            landmarks = landmarks + pivots[:,None,:]
+            landmarks = landmarks + pivots[:, None, :]
             landmarks = landmarks.float().cpu()
             landmarks = torch.split(landmarks, splits)
 
@@ -113,4 +112,4 @@ class LocMaxNMSPostprocessor(nn.Module):
 
             result = [{"bboxes": _bboxes, "scores": _scores, "landmarks": _landmarks}\
                     for _bboxes, _scores, _landmarks in zip(bboxes, scores, landmarks)]
-            return result
+        return result
