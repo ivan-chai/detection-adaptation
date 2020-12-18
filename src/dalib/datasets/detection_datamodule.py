@@ -37,7 +37,7 @@ class DetectionBatch:
     def __init__(self, samples):
         X, y = zip(*samples)
         self.X = torch.stack(X)
-        self.y = y
+        self.y = list(y)
 
     def pin_memory(self):
         self.X = self.X.pin_memory()

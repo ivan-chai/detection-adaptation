@@ -1,1 +1,4 @@
-from .detection_adaptation_module import DetectionAdaptationModule
+from .detection_adaptation_gan import DetectionAdaptationGANModule
+from .detection_adaptation_pseudolabeling import DetectionAdaptationPseudolabelingModule
+from .weak_pseudolabeling import WeakPseudolabeling
+from .adversarial_background_score_regularization import AdversarialBackgroundScoreRegularizationLoss

@@ -20,7 +20,7 @@ class PixelwiseDiscriminator(nn.Sequential):
     @staticmethod
     def get_default_config():
         return OrderedDict([
-            ("in_channels", 128),
+            ("in_channels", 5),
             ("hidden_channels", [64,32,16]),
             ("activation", "leaky_relu"),
         ])

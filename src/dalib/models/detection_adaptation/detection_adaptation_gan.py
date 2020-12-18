@@ -15,6 +15,8 @@ from ...config import prepare_config
 from ..detection import Detector, FacesAsPointsLoss
 from .discriminator import PixelwiseDiscriminator
 from ...metrics import AveragePrecisionCalculator
+from .adversarial_background_score_regularization import AdversarialBackgroundScoreRegularizationLoss
+from .weak_pseudolabeling import WeakPseudolabeling
 
 
 DISCRIMINATORS = {
@@ -53,20 +55,21 @@ class flip_labels:
 
 
 class no_grad:
-
     def __init__(self, module):
         self.module = module
-
+        self.p_states = {}
+    
     def __enter__(self):
-        for p in self.module.parameters():
+        for name, p in self.module.named_parameters():
+            self.p_states[name] = p.requires_grad
             p.requires_grad = False
-
+            
     def __exit__(self, *args):
-        for p in self.module.parameters():
-            p.requires_grad = True
+        for name, p in self.module.named_parameters():
+            p.requires_grad = self.p_states.get(name, p.requires_grad)
 
 
-class DetectionAdaptationModule(pl.LightningModule):
+class DetectionAdaptationGANModule(pl.LightningModule):
 
     @staticmethod
     def get_default_config():
@@ -152,6 +155,13 @@ class DetectionAdaptationModule(pl.LightningModule):
             self._freeze_predictor()
 
         y_pred = self.detector(X)
+        ###
+        y_pred["embedding_t"] = torch.cat([
+            y_pred["scores_t"][:,None,...],
+            y_pred["deltas_t"],
+            y_pred["sizes_t"]
+        ], dim=1)
+        ###
         domain_logits = self._apply_discriminator(y_pred, y_true)
         y_pred["domain_logits"] = domain_logits
         return y_pred
@@ -229,7 +239,7 @@ class DetectionAdaptationModule(pl.LightningModule):
         ]).to(domain_logits.device)
 
         src_domain_label = int(self.config["source_domain_label"])
-        balance = self.config["domain_balance"]
+        balance = 1/self.config["domain_balance"]
         balancing_weights = torch.ones_like(domain_labels).float()
         balancing_weights[domain_labels == src_domain_label] = balance
         balancing_weights /= (1. + balance)

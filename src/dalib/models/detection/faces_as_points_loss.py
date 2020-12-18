@@ -172,7 +172,7 @@ def make_target_keypoints(keypoints_t, bboxes, keypoints, offsets, stride):
 
     return keypoints, target_keypoints
 
-def pixelwise_focal(scores_t, target_scores_t, a, b):
+def pixelwise_focal(scores_t, target_scores_t, a, b, mask=None):
     """Pixeslwise focal loss as in arXiv:1904.07850.
 
     Args:
@@ -186,10 +186,12 @@ def pixelwise_focal(scores_t, target_scores_t, a, b):
     """
     eps = 1e-10
     loss = - (1 - target_scores_t + eps)**b * scores_t**a * torch.log(1 - scores_t + eps)
+    if mask is not None:
+        loss = loss*mask
     loss = loss.sum()
 
-    mask = (target_scores_t >= 1 - eps)
-    scores_t_masked = scores_t[mask]
+    center_mask = (target_scores_t >= 1 - eps)
+    scores_t_masked = scores_t[center_mask]
     loss += - ((1 - scores_t_masked + eps)**a * torch.log(scores_t_masked + eps)).sum()
 
     return loss
@@ -276,10 +278,12 @@ class FacesAsPointsLoss():
         cls_losses = []
         scores_batch = prediction["scores_t"]
         norm_weights = []
-        for scores_t, bboxes in zip(scores_batch, bboxes_batch):
+
+        loss_masks = [t.get("loss_mask") for t in target]
+        for scores_t, bboxes, loss_mask in zip(scores_batch, bboxes_batch, loss_masks):
             scores_t, target_scores_t = make_target_scores(scores_t, bboxes, offsets, stride)
             target_scores_t = target_scores_t.to(scores_t.device)
-            loss = pixelwise_focal(scores_t, target_scores_t, self.a, self.b)
+            loss = pixelwise_focal(scores_t, target_scores_t, self.a, self.b, mask=loss_mask)
             cls_losses.append(loss)
             norm_weights.append(max(1, len(bboxes)))
         cls_losses = torch.stack(cls_losses)

@@ -1,4 +1,4 @@
 from .gradient_reversal_layer import GradientReversalLayer
 from .svhn_to_mnist import SVHNToMNISTModel
 from .detection import DetectionModule, Detector
-from .detection_adaptation import DetectionAdaptationModule
+from .detection_adaptation import DetectionAdaptationGANModule, DetectionAdaptationPseudolabelingModule
